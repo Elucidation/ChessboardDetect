@@ -1,6 +1,8 @@
 # Chessboard Detection
 
-Goal: Given a photo with a chess board in it, find the chessboard grid.
+## Goal
+
+* Given a photo with a chess board in it, find the chessboard grid.
 
 This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidation/tensorflow_chessbot), working with real images.
 
