@@ -81,3 +81,22 @@ if __name__ == '__main__':
 
   plt.show()
 
+def getCorners(chess_pts, top_dirs):
+  """top_dirs are the two top direction vectors for the chess board lines"""
+  d_norm_a = top_dirs[0]
+  vals = chess_pts.dot(d_norm_a)
+  a = chess_pts[np.argmin(vals),:]
+  b = chess_pts[np.argmax(vals),:]
+
+  dist = (b-a)
+  d_norm = np.array([-dist[1], dist[0]])
+  d_norm /= np.sqrt(np.sum(d_norm**2))
+
+  # print(d_norm)
+  vals = chess_pts.dot(d_norm)
+  # print(vals)
+  c = chess_pts[np.argmin(vals),:]
+  d = chess_pts[np.argmax(vals),:]
+
+  corners = np.vstack([a,c,b,d]).astype(np.float32)
+  return corners

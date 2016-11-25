@@ -46,34 +46,13 @@ for i in range(1,13):
     plt.text(chess_pts[idx,0], chess_pts[idx,1]-2,'%d' % idx, color='red', size=8);
 
   # Find corners of set of points
-  # print(top_dirs)
-  d_norm_a = top_dirs[0]
-  vals = chess_pts.dot(d_norm_a)
-  a = chess_pts[np.argmin(vals),:]
-  b = chess_pts[np.argmax(vals),:]
-  # a = chess_pts[0,:]
-  # b = chess_pts[-1,:]
-
-  dist = (b-a)
-  d_norm = np.array([-dist[1], dist[0]])
-  d_norm /= np.sqrt(np.sum(d_norm**2))
-  # d_norm = top_dirs[1]
-
-  # print(d_norm)
-  vals = chess_pts.dot(d_norm)
-  # print(vals)
-  c = chess_pts[np.argmin(vals),:]
-  d = chess_pts[np.argmax(vals),:]
-
-  plt.plot(a[0], a[1], 'yo', ms=10)
-  plt.plot(b[0], b[1], 'bo', ms=10)
-  plt.plot(c[0], c[1], 'go', ms=10)
-  plt.plot(d[0], d[1], 'co', ms=10)
-  corners = np.vstack([a,c,b,d]).astype(np.float32)
+  corners = getCorners(chess_pts, top_dirs)
   plt.plot(corners[:,0], corners[:,1], 'y', lw=5)
 
+  # Find perspective transform between corners of image to an idealized overhead
+  # We add on two tiles in each direction to account for potential missing lines
+  #  (the assumption being the algorithm should be able to find lines within 2 of edge always)
   ideal_corners = np.array([[0,0], [0,1], [1,1], [1,0]], dtype=np.float32)*400+200
-
   M = cv2.getPerspectiveTransform(corners, ideal_corners)
   warped_img = cv2.warpPerspective(img, M, (800, 800))
 
