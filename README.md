@@ -6,6 +6,19 @@
 
 This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidation/tensorflow_chessbot), working with real images.
 
+### Current state
+
+![Find chessboard and warp image](readme_find_warp_example.png)
+
+1. Use Probabilistic Hough Transform to find lines
+2. Prune lines based on strong alternating normal gradient angle frequency (checkerboard pattern)
+3. Cluster line sets into segments, and choose top two corresponding to two axes of chessboard pattern
+4. Find set of line intersections to define grid points
+5. Take bounding corner grid points and perspective warp image
+
+*TODO, implement previous comp vision algorithm for rectified chessboard images in this case*
+
+
 ### Example input image
 
 ![Example input image](4.jpg)
