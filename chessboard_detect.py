@@ -9,10 +9,12 @@ from chess_detect_helper import *
 np.set_printoptions(suppress=True) # Better printing of arrays
 
 for i in range(1,13):
+# for i in [10]:
 # for i in [4,12,11,7,8]:
-# for i in [12]:
-
+# for i in [7]:
+# for i in [1,7,9]:
   filename = "%d.jpg" % i
+  print("Processing %s" % filename)
   img_orig = scaleImageIfNeeded(PIL.Image.open(filename))
 
   # Grayscale
@@ -27,9 +29,9 @@ for i in range(1,13):
   chess_pts = chess_pts[np.argsort(chess_pts[:,0]),:] # Sort by y height
   # chess_pts = chess_pts[np.argsort(np.sum(chess_pts,1)),:] # Sort by y height
 
-  plt.figure(filename, figsize=(20,8))
+  plt.figure(filename, figsize=(8,8))
 
-  plt.subplot(121)
+  plt.subplot(221)
   plt.imshow(img_orig)
 
   # Lines
@@ -52,14 +54,86 @@ for i in range(1,13):
   # Find perspective transform between corners of image to an idealized overhead
   # We add on two tiles in each direction to account for potential missing lines
   #  (the assumption being the algorithm should be able to find lines within 2 of edge always)
-  ideal_corners = np.array([[0,0], [0,1], [1,1], [1,0]], dtype=np.float32)*400+200
+  ideal_corners = np.array([[0,0], [1,0], [1,1], [0,1]], dtype=np.float32)*400+200
   M = cv2.getPerspectiveTransform(corners, ideal_corners)
-  warped_img = cv2.warpPerspective(img, M, (800, 800))
+  warped_img = cv2.warpPerspective(np.array(img_orig), M, (800, 800))
 
-  plt.subplot(122)
+  plt.subplot(222)
   plt.imshow(warped_img)
 
-  # print(M)
+  # TODO: Fix awkward conversion
+  # Convert RGB numpy array to image, then to grayscale image, then back to numpy array
+  warped_img_gray = np.array(PIL.Image.fromarray(warped_img).convert('L'))
+  warped_img_gray = cv2.bilateralFilter(warped_img_gray,15,75,75)
+
+  # Find gradients
+  sobelx = cv2.Sobel(warped_img_gray,cv2.CV_64F,1,0,ksize=5)
+  # sobelx[warped_img_gray==0] = 0
+  sobely = cv2.Sobel(warped_img_gray,cv2.CV_64F,0,1,ksize=5)
+  # sobely[warped_img_gray==0] = 0
+
+  sobelx_pos = sobelx.copy()
+  sobelx_pos[sobelx <= 0] = 0
+  sobelx_neg = sobelx.copy()
+  sobelx_neg[sobelx > 0] = 0
+
+  sobely_pos = sobely.copy()
+  sobely_pos[sobely <= 0] = 0
+  sobely_neg = sobely.copy()
+  sobely_neg[sobely > 0] = 0
+
+  checker_x = np.sum(sobelx_pos, axis=0) * np.sum(-sobelx_neg, axis=0)
+  checker_x = skeletonize_1d(checker_x)
+
+  checker_y = np.sum(sobely_pos, axis=1) * np.sum(-sobely_neg, axis=1)
+  checker_y = skeletonize_1d(checker_y)
+
+  x_lines = np.argwhere(checker_x).flatten()
+  y_lines = np.argwhere(checker_y).flatten()
+
+  if len(x_lines) < 7 or len(y_lines) < 7:
+    print("%s : Skipping, not enough lines in warped image" % filename)
+    continue
+
+  # Select set of 7 adjacent lines with max sum score
+  x_scores = np.zeros(7)
+  for i in range(0,x_lines.shape[0]-7+1):
+    x_scores[i] = np.sum(checker_x[x_lines[i:i+7]])
+  x_start = np.argmax(x_scores)
+  strongest_x_lines = range(x_start,x_start+7)
+
+  y_scores = np.zeros(7)
+  for i in range(0,y_lines.shape[0]-7+1):
+    y_scores[i] = np.sum(checker_y[y_lines[i:i+7]])
+  y_start = np.argmax(y_scores)
+  strongest_y_lines = range(y_start,y_start+7)
+
+  # strongest_x_lines = np.argsort(checker_x[x_lines])[::-1][:7]
+  # strongest_y_lines = np.argsort(checker_y[y_lines])[::-1][:7]
+  
+  plt.subplot(223)
+  plt.plot(checker_x, '.-')
+  # print(strongest_x_lines)
+  # print(x_lines)
+  for k in strongest_x_lines:
+    idx = x_lines[k]
+    plt.plot([idx, idx], [0, np.max(checker_x)], 'r',lw=2)
+  
+  plt.subplot(224)
+  plt.plot(checker_y, '.-')
+  for k in strongest_y_lines:
+    idx = y_lines[k]
+    plt.plot([idx, idx], [0, np.max(checker_y)], 'g',lw=2)
+  # plt.imshow(sobelx)
+
+  
+  plt.subplot(222)
+  for idx in x_lines[strongest_x_lines]:
+    plt.plot([idx, idx], [0, warped_img_gray.shape[0]], 'r', lw=2)
+  for idx in y_lines[strongest_y_lines]:
+    plt.plot([0, warped_img_gray.shape[1]], [idx, idx], 'g', lw=2)
+
+  plt.axis('equal')
 
 plt.show()
 

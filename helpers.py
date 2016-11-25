@@ -149,3 +149,23 @@ def chooseBestSegments(segments, line_mags):
   # print("mags:",segment_mags)
   order = np.argsort(segment_mags)[::-1]
   return order[:2] # Top two segments only
+
+def skeletonize_1d(arr, win=50):
+  """return skeletonized 1d array (thin to single value, favor to the right)"""
+  _arr = arr.copy() # create a copy of array to modify without destroying original
+  # Go forwards
+  for i in range(_arr.size-1):
+    if _arr[i] == 0:
+      continue
+    # Will right-shift if they are the same
+    if np.any(arr[i] <= arr[i+1:i+win+1]):
+      _arr[i] = 0
+  
+  # Go reverse
+  for i in np.arange(_arr.size-1, 0,-1):
+    if _arr[i] == 0:
+      continue
+
+    if np.any(arr[max(0,i-win):i] > arr[i]):
+      _arr[i] = 0
+  return _arr
