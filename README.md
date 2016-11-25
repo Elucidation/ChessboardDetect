@@ -23,6 +23,12 @@ This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidati
 
 ![Example input image](4.jpg)
 
+We find the chessboard and warp the image
+
+![Example warpimage](readme_output.png)
+
+*TODO, split warped image into tiles, predict chess pieces on tiles*
+
 ## Some constraints:
 
 * Chessboard can be populated with pieces, possibly partially occluded by hands etc. too
