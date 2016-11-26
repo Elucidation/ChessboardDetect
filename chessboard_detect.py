@@ -23,6 +23,11 @@ plot_folder = "plots"
 #   filename ="%d.jpg" % i
 for filename in os.listdir(input_folder):
   filepath = "%s/%s" % (input_folder,filename)
+  output_filename = output_folder+"/"+filename[:-3]+"png"
+  if (os.path.exists(output_filename)):
+    print("%s exists, skipping %s" % (output_filename, filename))
+    continue
+
   print("Processing %s" % filename)
   img_orig = scaleImageIfNeeded(PIL.Image.open(filepath))
 
@@ -101,7 +106,6 @@ for filename in os.listdir(input_folder):
 
 
   if SAVE_RECTIFIED:
-    output_filename = output_folder+"/"+filename[:-3]+"png"
     print(" Saving tile image to %s" % output_filename)
     PIL.Image.fromarray(better_warped_img).save(output_filename)
 
