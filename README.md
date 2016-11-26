@@ -4,13 +4,15 @@
 
 * Given a photo with a chess board in it, find the chessboard grid.
 
-![Animated Rectified Images](readme_rectified.gif)
-
 ![Labeled](readme_labeled.png)
 
 This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidation/tensorflow_chessbot), working with real images.
 
 ### Current state
+
+Animation of several rectified boards that were found from images such as the one below
+
+![Animated Rectified Images](readme_rectified.gif)
 
 ![Find chessboard and warp image](readme_find_warp_example.png)
 
