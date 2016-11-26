@@ -4,6 +4,8 @@
 
 * Given a photo with a chess board in it, find the chessboard grid.
 
+![Labeled](readme_labeled.png)
+
 This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidation/tensorflow_chessbot), working with real images.
 
 ### Current state
@@ -15,13 +17,13 @@ This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidati
 3. Cluster line sets into segments, and choose top two corresponding to two axes of chessboard pattern
 4. Find set of line intersections to define grid points
 5. Take bounding corner grid points and perspective warp image
-
-*TODO, implement previous comp vision algorithm for rectified chessboard images in this case*
-
+6. Re-center tile-map and refine corner points with cornerSubpix
+7. Refine final transform with updated corners & rectify tile image
+8. Correlate chessboard with tiled pattern, rotate 90 deg if orientation of dark/light tiles is off (A1 of H8 tiles must always be black in legal games, turns out a lot of stock images online don't follow this)
 
 ### Example input image
 
-![Example input image](4.jpg)
+![Example input image](input/4.jpg)
 
 We find the chessboard and warp the image
 

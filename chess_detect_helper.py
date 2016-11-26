@@ -37,7 +37,7 @@ def getChessLinesCorners(img):
   top_two_segments = chooseBestSegments(segments, norm_grads)
   if (top_two_segments.size < 2):
     print("Couldn't find enough segments")
-    return [], [], []
+    return [], [], [], []
 
   # Update good_mask to only include top two groups
   a_segment = segments == top_two_segments[0]
