@@ -10,23 +10,23 @@ from rectify_refine import *
 import os
 np.set_printoptions(suppress=True) # Better printing of arrays
 
-SAVE_RECTIFIED = True # Save rectified images out
-SAVE_PLOT = True # Save plots (doesn't need to visualize)
-SHOW_PLOTS = False # Visualize plots
+SAVE_RECTIFIED = False # Save rectified images out
+SAVE_PLOT = False # Save plots (doesn't need to visualize)
+SHOW_PLOTS = True # Visualize plots
 
-input_folder = "input"
+input_folder = "input2"
 output_folder = "rectified"
 plot_folder = "plots"
 
 
-# for i in [7]:
-#   filename ="%d.jpg" % i
-for filename in os.listdir(input_folder):
+for i in [23]:
+  filename ="%02d.jpg" % i
+# for filename in os.listdir(input_folder):
   filepath = "%s/%s" % (input_folder,filename)
   output_filename = output_folder+"/"+filename[:-3]+"png"
-  if (os.path.exists(output_filename)):
-    print("%s exists, skipping %s" % (output_filename, filename))
-    continue
+  # if (os.path.exists(output_filename)):
+  #   print("%s exists, skipping %s" % (output_filename, filename))
+  #   continue
 
   print("Processing %s" % filename)
   img_orig = scaleImageIfNeeded(PIL.Image.open(filepath))
@@ -43,11 +43,17 @@ for filename in os.listdir(input_folder):
 
   ##################
   ## Find initial set of chess lines in image using hough lines & gradient pruning
-  lines_a, lines_b, chess_pts, top_dirs = getChessLinesCorners(img)
+  lines_a, lines_b, chess_pts, top_dirs = getChessLinesCorners(img, chessboard_to_screen_ratio = 0.2)
+  if (len(chess_pts) < 4):
+    lines_a, lines_b, chess_pts, top_dirs = getChessLinesCorners(img, chessboard_to_screen_ratio = 0.15)
+  if (len(chess_pts) < 4):
+    lines_a, lines_b, chess_pts, top_dirs = getChessLinesCorners(img, chessboard_to_screen_ratio = 0.3)
   if (len(chess_pts) == 0):
     print("Couldn't get result for %s, skipping" % filename)
     continue
-  
+  elif (len(chess_pts) < 4):
+    print("Couldn't get enough chess points: ", lines_a, lines_b, chess_pts, top_dirs)
+    continue
   chess_pts = chess_pts[np.argsort(chess_pts[:,0]),:] # Sort by y height (row)
 
   ################## 

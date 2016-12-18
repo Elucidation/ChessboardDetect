@@ -3,7 +3,7 @@ import numpy as np
 from helpers import *
 from line_intersection import *
 
-def getChessLinesCorners(img):
+def getChessLinesCorners(img, chessboard_to_screen_ratio=0.2):
   # Edges
   edges = cv2.Canny(img,200,500,apertureSize = 3, L2gradient=False) # Better thresholds
 
@@ -13,7 +13,7 @@ def getChessLinesCorners(img):
   grad_mag = np.sqrt(sobelx**2+sobely**2)
 
   # Hough Lines Probabilistic
-  chessboard_to_screen_ratio = 0.2
+  # chessboard_to_screen_ratio = 0.2
   min_chessboard_line_length = chessboard_to_screen_ratio * min(img.shape)
   # TODO: This varys based on the chessboard to screen ratio, for chessboards filling the screen, we want to hop further
   max_line_gap = min_chessboard_line_length / 8.0 * 1.5 # Can hop up to one missing square

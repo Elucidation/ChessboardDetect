@@ -232,14 +232,77 @@ def getOrigChessCorners(warp_corners, all_warp_corners, M_inv):
   return real_corners[:,:2].astype(np.float32), all_real_corners[:,:2].astype(np.float32)
 
 def getTileImage(input_img, quad_corners, tile_buffer=0, tile_res=64):
-    # Add N tile worth buffer on outside edge, such that
-    # CV/ML algorithms could potentially use this data for better predictions
-    ideal_quad_corners = np.array([[0,0], [1,0], [1,1], [0,1]], dtype=np.float32)
+  # Add N tile worth buffer on outside edge, such that
+  # CV/ML algorithms could potentially use this data for better predictions
+  ideal_quad_corners = np.array([[0,0], [1,0], [1,1], [0,1]], dtype=np.float32)
 
-    side_len = tile_res*(8+2*tile_buffer)
+  main_len = tile_res*(ideal_quad_corners*8+tile_buffer)
+  side_len = tile_res*(8+2*tile_buffer)
 
-    M = cv2.getPerspectiveTransform(quad_corners,
-                                    tile_res*(ideal_quad_corners*8+tile_buffer))
-    out_img = cv2.warpPerspective(np.array(input_img), M,
-                                  (side_len, side_len))
-    return out_img, M
+  M = cv2.getPerspectiveTransform(quad_corners, main_len)
+  out_img = cv2.warpPerspective(np.array(input_img), M,
+                                (side_len, side_len))
+  return out_img, M
+
+def getTileTransform(quad_corners, tile_buffer=0, tile_res=64):
+  # Add N tile worth buffer on outside edge, such that
+  # CV/ML algorithms could potentially use this data for better predictions
+  ideal_quad_corners = np.array([[0,0], [1,0], [1,1], [0,1]], dtype=np.float32)
+
+  main_len = tile_res*(ideal_quad_corners*8+tile_buffer)
+  side_len = tile_res*(8+2*tile_buffer)
+
+  M = cv2.getPerspectiveTransform(quad_corners, main_len)
+  return M
+
+def getSegments(v, eps = 2):
+  # Get segment mask given a vector v, segments are values
+  # withing eps distance of each other
+  n = len(v)
+  segment_mask = np.zeros(n,dtype=np.uint16)
+  k = 1
+  for i in range(n):
+    if segment_mask[i] != 0:
+      continue
+    segment_mask[i] = k
+    for j in range(i+1,n):
+      if abs(v[j] - v[i]) < eps:
+        segment_mask[j] = k
+    k += 1
+  return segment_mask-1, k-1
+
+def mergePairs(pairs):
+  if len(pairs) == 1:
+    return pairs[0]
+  
+  vals = pairs[0]
+  for i in range(1,len(pairs)):
+    v_end = vals[-1]
+    next_idx = np.argwhere(pairs[i] == v_end)
+    if len(next_idx) > 0:
+      vals = np.hstack([vals[:-1], pairs[i,next_idx[0][0]:]])
+  return vals
+
+def getBestEqualSpacing(vals, min_pts=7, eps=4, std_min=2):
+  assert(min_pts>3)
+  # Finds all combinations of triplets of points in vals where
+  # the standard deviation is less than std_min, then merges
+  # them into longer equally spaced sets and returns
+  # the one with the largest equal spacing that has at least n_pts
+  n_pts = 3
+  pairs = np.array([k for k in itertools.combinations(vals, n_pts) if np.std(np.diff(k)) < std_min and np.mean(np.diff(k)) > 8])
+
+  spacings = np.array([np.mean(np.diff(k)) for k in pairs])
+  segments, num_segments = getSegments(spacings, eps)
+  best_spacing = []
+  best_mean = 0
+  for i in range(num_segments):
+    merged = mergePairs(pairs[segments==i])
+    spacing_mean = np.mean(np.diff(merged))
+
+    # Keep the largest equally spaced set that has min number of points
+    if len(merged) >= min_pts and spacing_mean > best_mean:
+      best_spacing = merged
+      best_mean = spacing_mean
+
+  return best_spacing
