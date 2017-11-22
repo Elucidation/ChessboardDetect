@@ -1,8 +1,8 @@
 # images/videos
 *.avi
 *.mp4
-*.png
-*.jpg
+#*.png
+#*.jpg
 *.gif
 
 # Byte-compiled / optimized / DLL files
