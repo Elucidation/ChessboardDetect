@@ -8,8 +8,8 @@ done
 i=0
 for file in input/*; do
   i=$((i+1))
-  ext=${file#*.}
+  ext=${file##*.}
   ext=${ext%_bkp}
-  echo "$file" "input/$i.$ext"
-  mv "$file" "input/img_$i.$ext"
+  echo "$file" "input/img_`printf %02d $i`.$ext"
+  mv "$file" "input/img_`printf %02d $i`.$ext"
 done

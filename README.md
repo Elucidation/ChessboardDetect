@@ -8,7 +8,19 @@
 
 This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidation/tensorflow_chessbot), working with real images.
 
-### Current state
+## Algorithm #2
+
+1. Find potential quad contours within the image
+1. Grow out a grid of points from potential contours, vote for best match to saddle points
+1. Warp image to grid, find set of 7 hough lines that maximize alternating chess-tile gradients 
+1. Build rectified chess image and overlay image with final transform
+
+
+Here are several results, 36 successes and 3 failures, red lines overlay the board outline and internal saddle points.
+
+![Results](result.png)
+
+## Old algorithm
 
 Animation of several rectified boards that were found from images such as the one below
 
