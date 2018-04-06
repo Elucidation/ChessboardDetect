@@ -6,10 +6,8 @@ import cv2 # For Sobel etc
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.pyplot import figure, imshow, axis
-from matplotlib.image import imread
+import os
 np.set_printoptions(suppress=True, linewidth=200) # Better printing of arrays
-plt.rcParams['image.cmap'] = 'jet' # Default colormap is jet
 
 
 # Saddle
@@ -445,25 +443,27 @@ def processSingle(filename='input/img_10.png'):
       plt.show()
 
 def main():
-  filenames = glob.glob('input/img_3*')
+  filenames = glob.glob('input/img_*')
+  filenames.extend(glob.glob('input_yt/*.jpg'))
   filenames = sorted(filenames)
-  print("Files: %s" % filenames)
-  fig = figure( figsize=(20, 20))
   n = len(filenames)
-  if (n == 0):
-    print("No files found.")
-    return
-  col = 4
-  row = n/col
-  if (n%col != 0):
-      row += 1
+
+  output_folder = "positions"
+  if not os.path.exists(output_folder):
+    os.mkdir(output_folder)
 
   for i in range(n):
       filename = filenames[i]
       print ("Processing %d/%d : %s" % (i+1,n,filename))
 
+      filename_short = filename[filename.find('/')+1:filename.find('.')]
+
+      outpath_good = "%s/%s.txt" % (output_folder, filename_short)
+      outpath_all = "%s/%s_all.txt" % (output_folder, filename_short)
+
       img = loadImage(filename)
       M, ideal_grid, grid_next, grid_good, spts = findChessboard(img)
+
 
       # View
       if M is not None:
@@ -474,34 +474,19 @@ def main():
           xy_unwarp = getUnwarpedPoints(best_lines_x, best_lines_y, M)
           board_outline_unwarp = getBoardOutline(best_lines_x, best_lines_y, M)
 
-          a=fig.add_subplot(row,col,i+1)
-          
-          axs = plt.axis()
-          imshow(img, cmap='Greys_r');
-          axs = plt.axis()
-      #     plt.plot(spts[:,1],spts[:,0],'o')
-  #         plt.plot(grid_next[:,0].A, grid_next[:,1].A,'rs')
-  #         plt.plot(grid_next[grid_good,0].A, grid_next[grid_good,1].A,'rs', markersize=3)
-          plt.plot(xy_unwarp[:,0], xy_unwarp[:,1], 'r.',)
-          plt.plot(board_outline_unwarp[:,0], board_outline_unwarp[:,1], 'ro-', markersize=5, linewidth=3)
-          plt.axis(axs)
-          plt.title("%s :  N matches=%d" % (filename, np.sum(grid_good)))
-          axis('off')
+          # print(xy_unwarp)
+          np.savetxt(outpath_good, xy_unwarp, fmt='%.2f')
+          # Flip x/y to match normal row col
+          np.savetxt(outpath_all, spts[:,[1,0]], fmt='%.2f')
+
           print("    N good pts %d" % np.sum(grid_good))
           
       else:
-          a=fig.add_subplot(row,col,i+1)
-          imshow(img, cmap='Greys_r');
-          plt.title("%s : Fail" % (filename))
-          axis('off')
-          print("    Fail")
-
-  plt.savefig('result.png', bbox_inches='tight')
-  plt.show()
+        # No points
+        continue
 
 
 if __name__ == '__main__':
-  print("Start")
   main()
 
 

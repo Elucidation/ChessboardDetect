@@ -6,50 +6,42 @@ import cv2 # For Sobel etc
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
+import tensorflow as tf
 from matplotlib.pyplot import figure, imshow, axis
 from matplotlib.image import imread
+import time
 np.set_printoptions(suppress=True, linewidth=200) # Better printing of arrays
 plt.rcParams['image.cmap'] = 'jet' # Default colormap is jet
 
 
-# Saddle
+from tensorflow.contrib import predictor
 
+export_dir = 'ml/model/001/1521934334'
+predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
+
+# Saddle
 def getSaddle(gray_img):
-    img = gray_img.astype(np.float64)
-    gx = cv2.Sobel(img,cv2.CV_64F,1,0)
-    gy = cv2.Sobel(img,cv2.CV_64F,0,1)
-    gxx = cv2.Sobel(gx,cv2.CV_64F,1,0)
-    gyy = cv2.Sobel(gy,cv2.CV_64F,0,1)
-    gxy = cv2.Sobel(gx,cv2.CV_64F,0,1)
+    img = gray_img#.astype(np.float64)
+    gx = cv2.Sobel(img,cv2.CV_32F,1,0)
+    gy = cv2.Sobel(img,cv2.CV_32F,0,1)
+    gxx = cv2.Sobel(gx,cv2.CV_32F,1,0)
+    gyy = cv2.Sobel(gy,cv2.CV_32F,0,1)
+    gxy = cv2.Sobel(gx,cv2.CV_32F,0,1)
     
-    S = gxx*gyy - gxy**2
+    S = -gxx*gyy + gxy**2
     return S
 
-def nonmax_sup(img, win=10):
-    w, h = img.shape
-#     img = cv2.blur(img, ksize=(5,5))
-    img_sup = np.zeros_like(img, dtype=np.float64)
-    for i,j in np.argwhere(img):
-        # Get neigborhood
-        ta=max(0,i-win)
-        tb=min(w,i+win+1)
-        tc=max(0,j-win)
-        td=min(h,j+win+1)
-        cell = img[ta:tb,tc:td]
-        val = img[i,j]
-        if np.sum(cell.max() == cell) > 1:
-            print(cell.argmax())
-        if cell.max() == val:
-            img_sup[i,j] = val
-    return img_sup
+def fast_nonmax_sup(img, win=21):
+  element = np.ones([win, win], np.uint8)
+  img_dilate = cv2.dilate(img, element)
+  peaks = cv2.compare(img, img_dilate, cv2.CMP_EQ)
+  # nonzeroImg = cv2.compare(img, 0, cv2.CMP_NE)
+  # peaks = cv2.bitwise_and(peaks, nonzeroImg)
+  # peaks[img == 0] = 0
+  # notPeaks = cv2.bitwise_not(peaks)
 
-def pruneSaddle(s):
-    thresh = 128
-    score = (s>0).sum()
-    while (score > 10000):
-        thresh = thresh*2
-        s[s<thresh] = 0
-        score = (s>0).sum()
+  img[peaks == 0] = 0
+  # return img
 
 def getMinSaddleDist(saddle_pts, pt):
     best_dist = None
@@ -328,15 +320,83 @@ def loadImage(filepath):
     
     return img
 
+def calculateOutliers(pts, threshold_mult = 1.5):
+  N = len(pts)
+  std = np.std(pts, axis=0)
+  ctr = np.mean(pts, axis=0)
+  return (np.any(np.abs(pts-ctr) > threshold_mult * std, axis=1))
+
+def pruneSaddle(s, init=128):
+    thresh = init
+    score = (s>0).sum()
+    while (score > 10000):
+        thresh = thresh*2
+        s[s<thresh] = 0
+        score = (s>0).sum()
+
+
+def getFinalSaddlePoints(img): # 32ms -> 15ms
+    # blur_img = cv2.blur(img, (3,3)) # Blur it (.5ms)
+    saddle = getSaddle(img) # 6ms
+    # a = time.time()
+    pruneSaddle(saddle, 1024) # (1024 = 8ms)
+    # b = time.time()
+    # print("getSaddle() took %.2f ms" % ((b-a)*1e3))
+    # saddle[saddle<100000]=0 # Hardcoded ~1ms
+    fast_nonmax_sup(saddle) # ~6ms
+    spts = np.argwhere(saddle)
+
+    return spts, saddle
+
+def processImage(img_gray):
+  a = time.time()
+  spts, saddle = getFinalSaddlePoints(img_gray)
+  b = time.time()
+  t_saddle = (b-a)
+  WINSIZE = 5
+
+  tiles = []
+  pred_pts = []
+  for pt in spts:
+    # Build tiles
+    if (np.any(pt <= WINSIZE) or np.any(pt >= np.array(img_gray.shape[:2]) - WINSIZE)):
+      continue
+    else:
+      tile = img_gray[pt[0]-WINSIZE:pt[0]+WINSIZE+1, pt[1]-WINSIZE:pt[1]+WINSIZE+1]
+      tiles.append(tile)
+      pred_pts.append(pt)
+  tiles = np.array(tiles, dtype=np.uint8)
+
+  a = time.time()
+  predictions = predict_fn(
+    {"x": tiles})
+
+  # print(predictions)
+
+  good_pts = []
+  bad_pts = []
+  final_predictions = []
+  prediction_levels = []
+  for i, prediction in enumerate(predictions['probabilities']):
+    c = prediction.argmax()
+  # for i, prediction in enumerate(predictions['class_ids']):
+  #   c = prediction
+    pt = pred_pts[i]
+    final_predictions.append(c)
+    prediction_levels.append(prediction[1])
+  b = time.time()
+  t_pred = b-a
+  print(" - Saddle took %.2f ms (%d pts), Predict took %.2f ms" % (t_saddle*1e3, len(spts), t_pred*1e3)) # ~2-3ms
+
+  ml_pts = np.array(pred_pts)[np.array(prediction_levels)>0.8,:]
+  bad_pts_mask = calculateOutliers(ml_pts)
+
+  ml_pts_inliers = ml_pts[~bad_pts_mask,:]
+
+  return ml_pts_inliers, saddle
+
 def findChessboard(img, min_pts_needed=15, max_pts_needed=25):
-    blur_img = cv2.blur(img, (3,3)) # Blur it
-    saddle = getSaddle(blur_img)
-    saddle = -saddle
-    saddle[saddle<0] = 0
-    pruneSaddle(saddle)
-    s2 = nonmax_sup(saddle)
-    s2[s2<100000]=0
-    spts = np.argwhere(s2)
+    spts, saddle = processImage(img)
 
     edges = cv2.Canny(img, 20, 250)
     contours_all, hierarchy = getContours(img, edges)
@@ -408,44 +468,8 @@ def getBoardOutline(best_lines_x, best_lines_y, M):
     return xy_unwarp[0,:,:]
 
 
-
-def processSingle(filename='input/img_10.png'):
-  img = loadImage(filename)
-  M, ideal_grid, grid_next, grid_good, spts = findChessboard(img)
-  print(M)
-
-  # View
-  if M is not None:
-      M, _ = generateNewBestFit((ideal_grid+8)*32, grid_next, grid_good) # generate mapping for warping image
-      print(M)
-      img_warp = cv2.warpPerspective(img, M, (17*32, 17*32), flags=cv2.WARP_INVERSE_MAP)
-      
-      best_lines_x, best_lines_y = getBestLines(img_warp)
-      xy_unwarp = getUnwarpedPoints(best_lines_x, best_lines_y, M)
-
-      
-      plt.figure(figsize=(20,20))
-      plt.subplot(212)
-      imshow(img_warp, cmap='Greys_r')
-  #     plt.figure(figsize=(20,10))
-      [plt.axvline(line, color='red', lw=2) for line in best_lines_x];
-      [plt.axhline(line, color='green', lw=2) for line in best_lines_y];
-      
-      
-      plt.subplot(211)
-      axs = plt.axis()
-      imshow(img, cmap='Greys_r');
-      axs = plt.axis()
-      plt.plot(spts[:,1],spts[:,0],'o')
-      plt.plot(grid_next[:,0].A, grid_next[:,1].A,'rs')
-      plt.plot(grid_next[grid_good,0].A, grid_next[grid_good,1].A,'rs', markersize=12)
-      plt.plot(xy_unwarp[:,0], xy_unwarp[:,1], 'go', markersize=15)
-      plt.axis(axs)
-      plt.savefig('result_single.png', bbox_inches='tight')
-      plt.show()
-
 def main():
-  filenames = glob.glob('input/img_3*')
+  filenames = glob.glob('input/img_2*')
   filenames = sorted(filenames)
   print("Files: %s" % filenames)
   fig = figure( figsize=(20, 20))
@@ -461,6 +485,7 @@ def main():
   for i in range(n):
       filename = filenames[i]
       print ("Processing %d/%d : %s" % (i+1,n,filename))
+      a = time.time()
 
       img = loadImage(filename)
       M, ideal_grid, grid_next, grid_good, spts = findChessboard(img)
@@ -474,6 +499,11 @@ def main():
           xy_unwarp = getUnwarpedPoints(best_lines_x, best_lines_y, M)
           board_outline_unwarp = getBoardOutline(best_lines_x, best_lines_y, M)
 
+      b = time.time()
+      proc_time = b-a
+      print(" - Processed in %.2f ms" % (proc_time*1e3))
+
+      if M is not None:
           a=fig.add_subplot(row,col,i+1)
           
           axs = plt.axis()
