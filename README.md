@@ -1,20 +1,22 @@
 # Chessboard Detection
 
+*Note* : This repo is a staging ground of half-baked hacky code and different approaches to chessboard detection. Several different algorithms have been implemented each with varying tradeoffs.
+
 ## Goal
 
-* Given a photo with a chess board in it, find the chessboard grid.
+* Given a photo with a chess board in it, find the chessboard grid. The goal is to make this fast enough to run real-time on an android phone.
 
 ![Labeled](readme_labeled.png)
 
 This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidation/tensorflow_chessbot), working with real images.
 
-## Algorithm #3 (DNNClassifier)
+## Algorithm #3 (DNNClassifier) (~1 sec per image)
 
 One separate track is real-time chessboard classification on video feeds such as off of youtube videos. Using a combination of x-corner saddle detection and an ML DNN Classifier trained off of the previous algorithms on tiles of saddle points, we can find a triangle mesh for 'mostly' chessboard corners in realtime' (~20ms per 960x554 px frame). This is with python and opencv, the saddle point detection takes ~15ms, using a C++ Halide routine we've gotten this as low as 4ms, so there's lots of room for optimization in the future.
 
 ![Triangle Mesh](triangle_mesh.png)
 
-## Algorithm #2
+## Algorithm #2 (~30 sec per image)
 
 1. Find potential quad contours within the image
 1. Grow out a grid of points from potential contours, vote for best match to saddle points
@@ -26,7 +28,7 @@ Here are several results, 36 successes and 3 failures, red lines overlay the boa
 
 ![Results](result.png)
 
-## Old algorithm
+## Algorithm #1 (~minute per image)
 
 Animation of several rectified boards that were found from images such as the one below
 
