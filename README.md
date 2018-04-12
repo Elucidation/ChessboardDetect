@@ -2,6 +2,16 @@
 
 *Note* : This repo is a staging ground of half-baked hacky code and different approaches to chessboard detection. Several different algorithms have been implemented each with varying tradeoffs.
 
+![Live Detection](output_ml.gif)
+
+Desktop real-time demo (~100-200ms per frame) of the chessboard detector running, each 640x480 frame is processed completely independently. It's written all in python (portions were written in C++/Halide but I've ended up not using them yet due to build issues).
+
+The algorithm is a combination of opencv for video capture and several basic vision algorithms, finding saddle points in the image, which are then classified using a Tensorflow DNNClassifier. After that all potential chess tile quads are used to warp the points onto an ideal unity grid and they are scored for grid-i-ness, a kind of brutesac (ransac without the random). Lots of opportunities for optimization to be had.
+
+Once the best scoring grid is found, we try and fit a chessboard to the points in unity grid space, then do one more refinement with opencv's findHomography and the final chessboard transform is shown as a red outline.
+
+![Example Unity Grid](example_unity_grid.png)
+
 ## Goal
 
 * Given a photo with a chess board in it, find the chessboard grid. The goal is to make this fast enough to run real-time on an android phone.
@@ -45,9 +55,7 @@ Animation of several rectified boards that were found from images such as the on
 7. Refine final transform with updated corners & rectify tile image
 8. Correlate chessboard with tiled pattern, rotate 90 deg if orientation of dark/light tiles is off (A1 of H8 tiles must always be black in legal games, turns out a lot of stock images online don't follow this)
 
-### Example input image
-
-![Example input image](input/4.jpg)
+### Old Example
 
 We find the chessboard and warp the image
 
