@@ -21,7 +21,7 @@ Once the best scoring grid is found, we try and fit a chessboard to the points i
 
 This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidation/tensorflow_chessbot), working with real images.
 
-## Algorithm #3 (DNNClassifier) (~1 sec per image)
+## Algorithm #3 (DNNClassifier) (~100-200ms per image)
 
 One separate track is real-time chessboard classification on video feeds such as off of youtube videos. Using a combination of x-corner saddle detection and an ML DNN Classifier trained off of the previous algorithms on tiles of saddle points, we can find a triangle mesh for 'mostly' chessboard corners in realtime' (~20ms per 960x554 px frame). This is with python and opencv, the saddle point detection takes ~15ms, using a C++ Halide routine we've gotten this as low as 4ms, so there's lots of room for optimization in the future.
 
