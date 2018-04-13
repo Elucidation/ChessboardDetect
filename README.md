@@ -2,6 +2,7 @@
 
 *Note* : This repo is a staging ground of half-baked hacky code and different approaches to chessboard detection. Several different algorithms have been implemented each with varying tradeoffs.
 
+![Live Detection Speed](speedchess1_ml.gif)
 ![Live Detection](output_ml.gif)
 
 Desktop real-time demo (~100-200ms per frame) of the chessboard detector running, each 640x480 frame is processed completely independently. It's written all in python (portions were written in C++/Halide but I've ended up not using them yet due to build issues).
