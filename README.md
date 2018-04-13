@@ -5,7 +5,7 @@
 ![Live Detection Speed](speedchess1_ml.gif)
 ![Live Detection](output_ml.gif)
 
-Desktop real-time demo (~100-200ms per frame) of the chessboard detector running, each 640x480 frame is processed completely independently. It's written all in python (portions were written in C++/Halide but I've ended up not using them yet due to build issues).
+Desktop real-time demo (~100-200ms per frame) of the chessboard detector running, each 640x480 frame is processed completely independently (yes, yes, it would be much better to just do it once and follow the tracked points). It's written all in python (portions were written in C++/Halide but I've ended up not using them yet due to build issues).
 
 The algorithm is a combination of opencv for video capture and several basic vision algorithms, finding saddle points in the image, which are then classified using a Tensorflow DNNClassifier. After that all potential chess tile quads are used to warp the points onto an ideal unity grid and they are scored for grid-i-ness, a kind of brutesac (ransac without the random). Lots of opportunities for optimization to be had.
 
