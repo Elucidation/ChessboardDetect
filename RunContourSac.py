@@ -5,6 +5,8 @@ import PIL.Image
 import skvideo.io
 import numpy as np
 import Brutesac
+from functools import wraps
+import time
 from scipy.spatial import ConvexHull
 
 @Brutesac.timed
@@ -131,8 +133,8 @@ def contourSacChessboard(xcorner_pts, quads):
       best_M = M
       best_quad = quad
       best_offset = offset
-      # if best_score > (len(xcorner_pts)*0.9):
-      #   break
+      if best_score > (len(xcorner_pts)*0.9):
+        break
 
   return best_M, best_quad, best_offset, best_score, best_error_score
 
@@ -148,7 +150,7 @@ def processFrame(frame, gray):
     M_homog = None
 
   # Draw tiles found
-  cv2.drawContours(frame,contours,-1,(0,255,255),2)
+  # cv2.drawContours(frame,contours,-1,(0,255,255),2)
 
   # Draw xcorner points
   for pt in pts:
@@ -165,6 +167,11 @@ def processFrame(frame, gray):
     cv2.polylines(frame, 
       [unwarped_ideal_chess_corners_homography.astype(np.int32)], 
       isClosed=True, thickness=4, color=(0,0,255))
+
+  # if best_quad is not None:
+    # cv2.polylines(frame, 
+    #   [best_quad.astype(np.int32)], 
+    #   isClosed=True, thickness=4, color=(255,0,255))
 
   # Visualize mask used by getContours
   # if len(pts) >= 3:
@@ -194,12 +201,25 @@ def processFrame(frame, gray):
 
   # cv2.putText(frame, 'Frame %d' % i, (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0,cv2.LINE_AA)
 
+def getWarpedChessboard(img, M, tile_px=32):
+  # Given a the 4 points of a chessboard, get a warped image of just the chessboard
+
+  # board_pts = np.vstack([
+  #   np.array([0,0,1,1])*tile_px,
+  #   np.array([0,1,1,0])*tile_px
+  #   ]).T
+  img_warp = cv2.warpPerspective(img, M, (8*tile_px, 8*tile_px))
+  return img_warp
+
+
 
 def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
   print("Loading video %s" % filename)
-  vidstream = skvideo.io.vread(filename)#, num_frames=1000)
+  # vidstream = skvideo.io.vread(filename, num_frames=4000)
+  # Load frame-by-frame
+  vidstream = skvideo.io.vreader(filename)
   print("Finished loading")
-  print(vidstream.shape)
+  # print(vidstream.shape)
 
   # ffmpeg -i vidstream_frames/ml_frame_%03d.jpg -c:v libx264 -vf "fps=25,format=yuv420p"  test.avi -y
 
@@ -208,7 +228,7 @@ def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
     os.mkdir(output_folder)
 
   for i, frame in enumerate(vidstream):
-    # if i < 190:
+    # if i < 2000:
     #   continue
     print("Frame %d" % i)
     # if (i%5!=0):
@@ -220,13 +240,19 @@ def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+    # if i == 63:
+    #   cv2.imwrite('weird.png', frame)
+    #   break;
+
+    a = time.time()
     frame = processFrame(frame, gray)
+    t_proc = time.time() - a
 
     # Add frame counter
-    cv2.putText(frame, 'Frame %d' % i, (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0,cv2.LINE_AA)
+    cv2.putText(frame, 'Frame % 4d (Processed in % 6.1f ms)' % (i, t_proc*1e3), (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0)
 
     # Display the resulting frame
-    # cv2.imshow('frame',frame)
+    cv2.imshow('frame',frame)
     output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
     if SAVE_FRAME:
       cv2.imwrite(output_filepath, frame)
@@ -244,10 +270,13 @@ def main():
   # filenames = glob.glob('input/img_*') filenames = sorted(filenames)
   # n = len(filenames)
   # filename = filenames[0]
-  filename = 'input/img_01.jpg'
+  # filename = 'input/img_01.jpg'
+  filename = 'weird.jpg'
+  filename = 'chess_out1.png'
 
   print ("Processing %s" % (filename))
   img = PIL.Image.open(filename).resize([600,400])
+  # img = PIL.Image.open(filename)
   rgb = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
   gray = np.array(img.convert('L'))
 
@@ -267,10 +296,14 @@ if __name__ == '__main__':
   # filename = 'carlsen_match2.mp4'
   # filename = 'output2.avi'
   # filename = 'random1.mp4'
-  # filename = 'match2.mp4'
+  filename = 'match2.mp4'
   # filename = 'output.avi'
-  filename = 'speedchess1.mp4'
-  videostream(filename, True)
+  # filename = 'speedchess1.mp4'
+  # filename = 'chess_beer.mp4'
+  # filename = 'john1.mp4'
+  # filename = 'john2.mp4'
+  # filename = 'john3.mp4'
+  videostream(filename, False)
 
 
 

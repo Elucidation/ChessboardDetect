@@ -81,16 +81,16 @@ def main():
   print('Finished')
 
 if __name__ == '__main__':
-  main()
+  # main()
   # filename = 'carlsen_match.mp4'
   # filename = 'carlsen_match2.mp4'
   # filename = 'output.avi'
   # filename = 'output2.avi'
   # filename = 'random1.mp4'
-  # filename = 'speedchess1.mp4'
+  filename = 'speedchess1.mp4'
   # filename = 'match1.mp4'
   # filename = 'match2.mp4'
-  # videostream(filename, True)
+  videostream(filename, True)
 
 
 

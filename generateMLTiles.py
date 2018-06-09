@@ -38,9 +38,9 @@ def mkdir_p(path):
             raise
 
 def main():
-  input_data = 'pt_dataset.txt'
+  input_data = 'pt_dataset2.txt'
 
-  WINSIZE = 5
+  WINSIZE = 10
   dataset_folder = 'dataset_gray_%d' % WINSIZE
   folder_good = '%s/good' % dataset_folder
   folder_bad = '%s/bad' % dataset_folder
@@ -58,7 +58,7 @@ def main():
   count_bad = 0
   
   # save all points to a file
-  with open('pt_dataset.txt', 'r') as f:
+  with open(input_data, 'r') as f:
     lines = [x.strip() for x in f.readlines()]
     n = len(lines)/5
     # n = 1
@@ -75,6 +75,10 @@ def main():
       img_filepath = 'input/%s.png' % filename
       if not os.path.exists(img_filepath):
         img_filepath = 'input/%s.jpg' % filename
+      if not os.path.exists(img_filepath):
+        img_filepath = 'input_yt/%s.jpg' % filename
+      if not os.path.exists(img_filepath):
+        img_filepath = 'input_yt/%s.png' % filename
       img = loadImage(img_filepath, DO_GRAYSCALE)
 
       kernel = np.ones((3,3),np.uint8)

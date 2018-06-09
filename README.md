@@ -10,7 +10,19 @@
 
 This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidation/tensorflow_chessbot), working with real images.
 
-## Algorithm #3 (DNNClassifier) (~1 sec per image)
+## Algorithm #4 DNNClassifier + Lucas-Kanade tracking for consistency through video frames (~50-200ms per frame)
+
+Training a DNNClassifier with ~12k tiles (6k each of true/false chess corners) gets us to roughly 96% success rate before over-training. Combining Algorithm #3 with a Lucas Kanade tracking of found chessboard points gives more consistent chessboards across frames. 
+
+![SpeedChessTrackedLK](speedchess1_composite.gif)
+
+More Tracking videos: https://photos.app.goo.gl/QYBZH4PrmR1FKaUa9
+
+Notes: It does not yet track off-by-one errors, this is a reasonably simple fix (TODO).
+
+
+
+## Algorithm #3 DNNClassifier (~1 sec per image)
 
 One separate track is real-time chessboard classification on video feeds such as off of youtube videos. Using a combination of x-corner saddle detection and an ML DNN Classifier trained off of the previous algorithms on tiles of saddle points, we can find a triangle mesh for 'mostly' chessboard corners in realtime' (~20ms per 960x554 px frame). This is with python and opencv, the saddle point detection takes ~15ms, using a C++ Halide routine we've gotten this as low as 4ms, so there's lots of room for optimization in the future.
 

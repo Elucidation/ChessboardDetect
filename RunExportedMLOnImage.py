@@ -17,7 +17,12 @@ from scipy.spatial import Delaunay
 
 from tensorflow.contrib import predictor
 
-export_dir = 'ml/model/001/1521934334'
+# export_dir = 'ml/model/001/1521934334' # old
+# export_dir = 'ml/model/002/1528405915' # newer (same dataset, but random image changes)
+# export_dir = 'ml/model/003/1528406613' # newer still
+# export_dir = 'ml/model/004/1528441286' # win 21x21, 95% accuracy
+# export_dir = 'ml/model/005/1528489968' # win 21x21 96% accuracy
+export_dir = 'ml/model/006/1528565066' # win 21x21 97% accuracy
 predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
 
 # Saddle
@@ -31,36 +36,6 @@ def getSaddle(gray_img):
     
     S = -gxx*gyy + gxy**2
     return S
-
-
-# void nonmaxSupress(Mat &img) {
-#     int dilation_size = 5;
-#     Mat img_dilate;
-#     Mat peaks;
-#     Mat notPeaks;
-#     Mat nonzeroImg;
-#     Mat element = getStructuringElement(MORPH_RECT,
-#                                        Size( 2*dilation_size + 1, 2*dilation_size+1 ),
-#                                        Point( dilation_size, dilation_size ) );
-#     // Dilate max value by window size
-#     dilate(img, img_dilate, element);
-#     // Compare and find where values of dilated vs original image are NOT the same.
-#     compare(img, img_dilate, peaks, CMP_EQ);
-#     // compare(img, img_dilate, notPeaks, CMP_NE);
-#     compare(img, 0, nonzeroImg, CMP_NE);
-#     bitwise_and(nonzeroImg, peaks, peaks); // Only keep peaks that are non-zero
-    
-#     // Remove peaks that are zero
-#     // Also set max to 255
-#     // compare(img, 0.8, nonzeroImg, CMP_GT);
-#     // bitwise_and(nonzeroImg, peaks, peaks); // Only keep peaks that are non-zero
-#     // bitwise_not(peaks, notPeaks);
-#     // Set all values where not the same to zero. Non-max suppress.
-#     bitwise_not(peaks, notPeaks);
-#     img.setTo(0, notPeaks);
-#     // img.setTo(255, peaks);
-
-# }
 
 def fast_nonmax_sup(img, win=21):
   element = np.ones([win, win], np.uint8)
@@ -277,7 +252,7 @@ def processImage(img_gray):
   spts = getFinalSaddlePoints(img_gray)
   b = time.time()
   t_saddle = (b-a_start)
-  WINSIZE = 5
+  WINSIZE = 10
 
   tiles = []
   pred_pts = []
@@ -300,22 +275,24 @@ def processImage(img_gray):
     {"x": tiles})
 
   # print(predictions)
+  # raise('Error')
 
   good_pts = []
   bad_pts = []
   final_predictions = []
   prediction_levels = []
-  for i, prediction in enumerate(predictions['probabilities']):
-    c = prediction.argmax()
-  # for i, prediction in enumerate(predictions['class_ids']):
-  #   c = prediction
+  # for i, prediction in enumerate(predictions['probabilities']):
+    # c = prediction.argmax()
+  for i, prediction in enumerate(predictions['class_ids']):
+    c = prediction[0]
     pt = pred_pts[i]
     final_predictions.append(c)
-    prediction_levels.append(prediction[1])
+    # prediction_levels.append(prediction[1])
+    prediction_levels.append(c)
   b = time.time()
   t_pred = b-a
 
-  ml_pts = np.array(pred_pts)[np.array(prediction_levels)>0.8,:]
+  ml_pts = np.array(pred_pts)[np.array(prediction_levels)>0.5,:]
   bad_pts_mask = calculateOutliers(ml_pts)
   # Inliers
   inlier_pts = ml_pts[~bad_pts_mask,:]
@@ -399,9 +376,9 @@ if __name__ == '__main__':
   # main(True)
   # filename = 'carlsen_match.mp4'
   # filename = 'carlsen_match2.mp4'
-  # filename = 'output.avi'
+  filename = 'output.avi'
   # filename = 'output2.avi'
-  filename = 'random1.mp4'
+  # filename = 'random1.mp4'
   # filename = 'speedchess1.mp4'
   # filename = 'match1.mp4'
   # filename = 'match2.mp4'

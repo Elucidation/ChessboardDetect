@@ -74,13 +74,16 @@ def countHits(given_pts, x_offset, y_offset):
 def getBestBoardMatchup(given_pts):
     best_score = 0
     best_offset = None
+    # scores = np.zeros([7,7])
     for i in range(7):
         for j in range(7):
             # Offsets from -6 to 0 for both
             score = countHits(given_pts, i-6, j-6)
+            # scores[i,j] = score
             if score > best_score:
                 best_score = score
                 best_offset = [i-6, j-6]
+    # print scores
     return best_score, best_offset
 
 def scoreQuad(quad, pts, prevBestScore=0):
@@ -94,6 +97,18 @@ def scoreQuad(quad, pts, prevBestScore=0):
     
     # Get their closest idealized grid point
     pts_warped_int = pts_warped.round().astype(int)
+
+    # Refine
+    M_refined, _ = cv2.findHomography(pts, pts_warped_int, cv2.RANSAC)
+    if (M_refined is None):
+      M_refined = M
+
+    # Re-Warp points with the refined M and score error
+    pts_warped = cv2.perspectiveTransform(np.expand_dims(pts.astype(float),0), M_refined)[0,:,:]
+    
+    # Get their closest idealized grid point
+    pts_warped_int = pts_warped.round().astype(int)
+
     
     # Count matches
     score, offset = getBestBoardMatchup(pts_warped_int)
@@ -129,13 +144,13 @@ def brutesacChessboard(xcorner_pts):
       best_M = M
       best_quad = quad
       best_offset = offset
-      # if best_score > (len(xcorner_pts)*0.9):
-      #   break
+      if best_score > (len(xcorner_pts)*0.8):
+        break
 
   return best_M, best_quad, best_offset, best_score, best_error_score
 
 
-@timed
+# @timed
 def refineHomography(pts, M, best_offset):
   pts_warped = cv2.perspectiveTransform(np.expand_dims(pts.astype(float),0), M)[0,:,:]
   a = pts_warped.round() - best_offset
@@ -152,22 +167,20 @@ def refineHomography(pts, M, best_offset):
   return M_homog
 
 @timed
-def classifyTiles(tiles):
+def preditOnTiles(tiles):
   predictions = RunExportedMLOnImage.predict_fn(
     {"x": tiles})
 
   # Return array of probability of tile being an xcorner.
-  return np.array([p[1] for p in predictions['probabilities']])
+  # return np.array([p[1] for p in predictions['probabilities']])
+  return np.array([p[0] for p in predictions['class_ids']])
 
 @timed
-def classifyImage(img_gray):
-  spts = RunExportedMLOnImage.getFinalSaddlePoints(img_gray)
-  WINSIZE = 5
-
+def classifyPoints(pts, img_gray, WINSIZE = 10):
   # Build tiles to run classifier on.
   tiles = []
   pred_pts = []
-  for pt in spts:
+  for pt in pts:
     # Build tiles
     if (np.any(pt <= WINSIZE) or np.any(pt >= np.array(img_gray.shape[:2]) - WINSIZE)):
       continue
@@ -177,15 +190,22 @@ def classifyImage(img_gray):
       pred_pts.append(pt)
 
   if tiles == []:
-    return [None]*7
+    return []
 
   tiles = np.array(tiles, dtype=np.uint8)
 
-  probs = classifyTiles(tiles)
+  # Classify tiles.
+  probs = preditOnTiles(tiles)
 
-  ml_pts = np.array(pred_pts)[probs>0.8,:]
+  ml_pts = np.array(pred_pts)[probs>0.5,:]
 
   return ml_pts
+
+@timed
+def classifyImage(img_gray, WINSIZE = 10):
+  spts = RunExportedMLOnImage.getFinalSaddlePoints(img_gray)
+
+  return classifyPoints(spts, img_gray, WINSIZE)
 
 @timed
 def processFrame(gray):
@@ -227,6 +247,7 @@ if __name__ == '__main__':
   # filenames.extend(glob.glob('input_bad/*.png'))
   # filenames.extend(glob.glob('input_bad/*.jpg'))
   filename = np.random.choice(filenames,1)[0]
+  filename= 'weird.jpg'
   print(filename)
   img = PIL.Image.open(filename)
   if (img.size[0] > 800):

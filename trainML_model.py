@@ -9,6 +9,7 @@ with np.load('dataset2_5.npz') as np_dataset:
   features = np_dataset['features']#[:(6227*2)]
   labels = np_dataset['labels']#[:(6227*2)]
 
+print(len(features), len(labels))
 
 # Shuffle data so good/bad are mixed
 shuffle_order = np.arange(len(labels))
@@ -66,7 +67,7 @@ estimator = tf.estimator.DNNClassifier(
   )
 
 n = 20
-for i in range(20):
+for i in range(n):
   print("Training %d-%d/%d" % (i*1000,(i+1)*1000,n*1000))
   estimator.train(input_fn=input_fn(train_features, train_labels), steps=1000)
 
@@ -95,4 +96,4 @@ for i,(prediction,true_answer) in enumerate(zip(predictions, test_labels.astype(
     count_good += 1
 
 success_rate = float(count_good) / len(test_labels)
-print("Total %d/%d right ~ %.2f%% success rate" % (count_good, len(test_labels), success_rate))
+print("Total %d/%d right ~ %.2f%% success rate" % (count_good, len(test_labels), 100*success_rate))

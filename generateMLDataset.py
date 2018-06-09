@@ -38,7 +38,7 @@ def mkdir_p(path):
             raise
 
 def main():
-  input_data = 'pt_dataset.txt'
+  input_data = 'pt_dataset2.txt'
 
   WINSIZE = 5
   dataset_folder = 'dataset_gray_%d' % WINSIZE
@@ -59,7 +59,7 @@ def main():
   bad_labels = []
 
   # save all points to a file
-  with open('pt_dataset2.txt', 'r') as f:
+  with open(input_data, 'r') as f:
     lines = [x.strip() for x in f.readlines()]
     n = len(lines)/5
     # n = 1
