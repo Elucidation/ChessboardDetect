@@ -2,6 +2,20 @@
 
 *Note* : This repo is a staging ground of half-baked hacky code and different approaches to chessboard detection. Several different algorithms have been implemented each with varying tradeoffs.
 
+![SpeedChessTrackedLK](speedchess1_composite.gif)
+![Live Detection Speed](speedchess1_ml.gif)
+![Live Detection](output_ml.gif)
+
+More Tracking videos: https://photos.app.goo.gl/QYBZH4PrmR1FKaUa9
+
+Desktop real-time demo (~30-200ms per frame) of the chessboard detector running, each frame is processed initially by the classifier, and once a match is found, Lucas-Kanade tracking is used to follow it onwards, occassionaly resetting if enough points are lost in the transition. It's written all in python (portions were written in C++/Halide but I've ended up not using them yet due to build issues).
+
+The algorithm is a combination of opencv for video capture and several basic vision algorithms, finding saddle points in the image, which are then classified using a Tensorflow DNNClassifier. After that all potential chess tile quads are used to warp the points onto an ideal unity grid and they are scored for grid-i-ness, a kind of brutesac (ransac without the random). Lots of opportunities for optimization to be had.
+
+Once the best scoring grid is found, we try and fit a chessboard to the points in unity grid space, then do one more refinement with opencv's findHomography and the final chessboard transform is shown as a red outline.
+
+![Example Unity Grid](example_unity_grid.png)
+
 ## Goal
 
 * Given a photo with a chess board in it, find the chessboard grid. The goal is to make this fast enough to run real-time on an android phone.
@@ -20,9 +34,7 @@ More Tracking videos: https://photos.app.goo.gl/QYBZH4PrmR1FKaUa9
 
 Notes: It does not yet track off-by-one errors, this is a reasonably simple fix (TODO).
 
-
-
-## Algorithm #3 DNNClassifier (~1 sec per image)
+## Algorithm #3 (DNNClassifier) (~100-200ms per image)
 
 One separate track is real-time chessboard classification on video feeds such as off of youtube videos. Using a combination of x-corner saddle detection and an ML DNN Classifier trained off of the previous algorithms on tiles of saddle points, we can find a triangle mesh for 'mostly' chessboard corners in realtime' (~20ms per 960x554 px frame). This is with python and opencv, the saddle point detection takes ~15ms, using a C++ Halide routine we've gotten this as low as 4ms, so there's lots of room for optimization in the future.
 
@@ -57,9 +69,7 @@ Animation of several rectified boards that were found from images such as the on
 7. Refine final transform with updated corners & rectify tile image
 8. Correlate chessboard with tiled pattern, rotate 90 deg if orientation of dark/light tiles is off (A1 of H8 tiles must always be black in legal games, turns out a lot of stock images online don't follow this)
 
-### Example input image
-
-![Example input image](input/4.jpg)
+### Old Example
 
 We find the chessboard and warp the image
 
