@@ -36,14 +36,14 @@ for i in range(steps):
   estimator.train(input_fn=preprocess.input_fn(tr_imgs, tr_labels, dataset_length), steps=train_steps)
 
   # Evaluate
-  metrics = estimator.evaluate(input_fn=preprocess.input_fn(val_imgs, val_labels))
+  metrics = estimator.evaluate(input_fn=preprocess.input_fn(val_imgs, val_labels, is_training=False))
   accuracy_score = metrics["accuracy"]
   print("-- Test Accuracy: {0:f}\n".format(accuracy_score))
 
 
 ############################
 # Validate
-predictions = estimator.predict(input_fn=preprocess.input_fn(val_imgs, val_labels))
+predictions = estimator.predict(input_fn=preprocess.input_fn(val_imgs, val_labels, is_training=False))
 
 test_labels = np.array(f_labels[split:])
 
