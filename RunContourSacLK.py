@@ -246,7 +246,7 @@ def processFrame(frame, gray):
     processFrame.prevGray = None
     warpFrame = None
 
-  return frame, warpFrame
+  return frame, warpFrame, M_homog
 
 processFrame.prevBoardpts = None
 processFrame.prevGray = None
@@ -286,6 +286,12 @@ def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
   if not os.path.exists(output_folder):
     os.mkdir(output_folder)
 
+  # Set up pts.txt, first line is the video filename
+  # Following lines is the frame number and the flattened M matrix for the chessboard
+  output_filepath_pts = '%s/pts.txt' % (output_folder)
+  with open(output_filepath_pts, 'w') as f:
+    f.write('%s\n' % filename)
+
   for i, frame in enumerate(vidstream):
     # if i < 2000:
     #   continue
@@ -304,7 +310,7 @@ def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
     #   break;
 
     a = time.time()
-    frame, warpFrame = processFrame(frame, gray)
+    frame, warpFrame, M = processFrame(frame, gray)
     t_proc = time.time() - a
 
     # Add frame counter
@@ -316,12 +322,20 @@ def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
       cv2.imshow('warpFrame',warpFrame)
     output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
     output_filepath_warp = '%s/ml_warp_frame_%03d.jpg' % (output_folder, i)
+
     if SAVE_FRAME:
       cv2.imwrite(output_filepath, frame)
       if warpFrame is None:
         cv2.imwrite(output_filepath_warp, np.zeros_like(frame))
       else:
         cv2.imwrite(output_filepath_warp, warpFrame)
+
+      # Append line of frame index and M matrix
+      if M is not None:
+        with open(output_filepath_pts, 'a') as f:
+          M_str = ','.join(map(str,M.flatten()))
+          # M_str = M.tostring() # binary
+          f.write(u'%d,%s\n' % (i, M_str))
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
@@ -362,14 +376,14 @@ if __name__ == '__main__':
   # filename = 'carlsen_match2.mp4'
   # filename = 'output2.avi' # Slow low rez
   # filename = 'random1.mp4' # Long video wait for 1k frames or so
-  filename = 'match2.mp4' # difficult
+  # filename = 'match2.mp4' # difficult
   # filename = 'output.avi' # Hard low rez
   # filename = 'output.mp4' # Hard
   # filename = 'speedchess1.mp4' # Great example
   # filename = 'wgm_1.mp4' # Lots of motion blur, slow
   # filename = 'gm_magnus_1.mp4' # Hard lots of scene transitions and blurry
   # filename = 'bro_1.mp4' # Little movement, easy.
-  # filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
+  filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
   # filename = 'john1.mp4' # Simple clean
   # filename = 'john2.mp4' # Slight motion, clean but slow
   # filename = 'swivel.mp4' # Moving around a fancy gold board

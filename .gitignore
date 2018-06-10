@@ -1,3 +1,9 @@
+# folders
+datasets/
+ml/
+results/
+training_pipeline/training_models/
+
 # images/videos
 *.avi
 *.mp4
