@@ -34,7 +34,6 @@ def calculateOnFrame(gray, old_pts=None, old_gray=None, minPointsForLK=10):
 
     pts = pts[valid,:]
     if len(pts) > minPointsForLK:
-
       # Update the valid points to the closest saddle point if possible
       spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
       spts = spts[:,[1,0]]
@@ -44,7 +43,7 @@ def calculateOnFrame(gray, old_pts=None, old_gray=None, minPointsForLK=10):
         best_spt_idx = d.argmin()
         # best_spt_idx = d.max(axis=1).argmin()
         # print(pt, spts[best_spt_idx,:], score)
-        if d[best_spt_idx] < 3**2:
+        if d[best_spt_idx] > 1 and d[best_spt_idx] < 3**2:
           newpts.append(spts[best_spt_idx,:])
         elif d[best_spt_idx] < 10**2:
           newpts.append(pt)
@@ -205,7 +204,8 @@ def processFrame(frame, gray):
 
   # Draw xcorner points
   for pt in pts.astype(np.int64):
-    cv2.circle(frame, tuple(pt), 3, (0,0,255), -1)
+    # cv2.circle(frame, tuple(pt), 3, (0,0,255), -1)
+    cv2.rectangle(frame, tuple(pt-1),tuple(pt+1), (0,255,255), -1)
 
 
   ideal_grid_pts = np.vstack([np.array([0,0,1,1,0])*8-1, np.array([0,1,1,0,0])*8-1]).T
@@ -257,9 +257,6 @@ def processFrame(frame, gray):
     cv2.polylines(frame, 
       [unwarped_ideal_chess_corners.astype(np.int32)], 
       isClosed=True, thickness=4, color=(0,0,255))
-
-    # cv2.circle(frame, tuple(unwarped_ideal_chess_corners[0,:].astype(np.int32)), 3, (255,255,255), -1)
-    cv2.circle(frame, tuple(unwarped_ideal_chess_corners[0,:].astype(np.int32)), 3, (255,255,255), -1)
 
     # Keep only points that are classified as chess corner points
     # validChessPoints = Brutesac.classifyPoints(unwarped_all_chesspts[:,[1,0]].astype(np.int32), gray)[:,[1,0]]
@@ -390,21 +387,23 @@ def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAM
     #   break;
 
     a = time.time()
-    frame, warpFrame, chessboard_corners = processFrame(frame, gray)
+    overlay_frame, warpFrame, chessboard_corners = processFrame(frame, gray)
     t_proc = time.time() - a
 
     # Add frame counter
-    cv2.putText(frame, 'Frame % 4d (Processed in % 6.1f ms)' % (i, t_proc*1e3), (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0)
+    cv2.putText(overlay_frame, 'Frame % 4d (Processed in % 6.1f ms)' % (i, t_proc*1e3), (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0)
 
     # Display the resulting frame
-    cv2.imshow('frame',frame)
+    cv2.imshow('overlayFrame',overlay_frame)
     if warpFrame is not None:
       cv2.imshow('warpFrame',warpFrame)
+    output_orig_filepath = '%s/frame_%03d.jpg' % (output_folder, i)
     output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
     output_filepath_warp = '%s/ml_warp_frame_%03d.jpg' % (output_folder, i)
 
     if SAVE_FRAME:
-      cv2.imwrite(output_filepath, frame)
+      cv2.imwrite(output_orig_filepath, frame)
+      cv2.imwrite(output_filepath, overlay_frame)
       if warpFrame is None:
         cv2.imwrite(output_filepath_warp, np.zeros_like(frame))
       else:
@@ -417,8 +416,8 @@ def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAM
           # M_str = M.tostring() # binary
           f.write(u'%d,%s\n' % (i, chessboard_corners_str))
 
-    # if cv2.waitKey(1) & 0xFF == ord('q'):
-    #     break
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
   # When everything done, release the capture
   # cap.release()
@@ -461,16 +460,17 @@ if __name__ == '__main__':
   # filename = 'wgm_1.mp4' # Lots of motion blur, slow
   # filename = 'gm_magnus_1.mp4' # Hard lots of scene transitions and blurry (init state with all pieces in a row not so good).
   # filename = 'bro_1.mp4' # Little movement, easy.
-  # filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
+  filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
   # filename = 'john1.mp4' # Simple clean
-  filename = 'john2.mp4' # Slight motion, clean but slow
+  # filename = 'john2.mp4' # Slight motion, clean but slow
   # filename = 'swivel.mp4' # Moving around a fancy gold board
 
   allfiles = ['output2.avi', 'random1.mp4', 'match2.mp4','output.avi','output.mp4',
     'speedchess1.mp4','wgm_1.mp4','gm_magnus_1.mp4',
     'bro_1.mp4','chess_beer.mp4','john1.mp4','john2.mp4','swivel.mp4']
 
-  for filename in allfiles:
+  # for filename in allfiles:
+  for filename in [filename]:
     fullpath = 'datasets/raw/videos/%s' % filename
     output_folder_prefix = 'results'
     processFrame.prevBoardpts = None
