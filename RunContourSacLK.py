@@ -346,7 +346,7 @@ def getWarpedChessboard(img, M, tile_px=32):
 
 
 
-def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAME=True, MAX_FRAME=None):
+def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAME=True, MAX_FRAME=None, DO_VISUALS=True):
   print("Loading video %s" % filepath)
   # vidstream = skvideo.io.vread(filepath, num_frames=4000)
   # Load frame-by-frame
@@ -387,16 +387,19 @@ def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAM
     #   break;
 
     a = time.time()
-    overlay_frame, warpFrame, chessboard_corners = processFrame(frame, gray)
+    overlay_frame, warpFrame, chessboard_corners = processFrame(frame.copy(), gray)
     t_proc = time.time() - a
 
     # Add frame counter
     cv2.putText(overlay_frame, 'Frame % 4d (Processed in % 6.1f ms)' % (i, t_proc*1e3), (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0)
 
-    # Display the resulting frame
-    cv2.imshow('overlayFrame',overlay_frame)
-    if warpFrame is not None:
-      cv2.imshow('warpFrame',warpFrame)
+    if DO_VISUALS:
+      # Display the resulting frame
+      cv2.imshow('overlayFrame',overlay_frame)
+      if warpFrame is not None:
+        cv2.imshow('warpFrame',warpFrame)
+    
+
     output_orig_filepath = '%s/frame_%03d.jpg' % (output_folder, i)
     output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
     output_filepath_warp = '%s/ml_warp_frame_%03d.jpg' % (output_folder, i)
@@ -416,12 +419,14 @@ def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAM
           # M_str = M.tostring() # binary
           f.write(u'%d,%s\n' % (i, chessboard_corners_str))
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    if DO_VISUALS:
+      if cv2.waitKey(1) & 0xFF == ord('q'):
+          break
 
   # When everything done, release the capture
   # cap.release()
-  cv2.destroyAllWindows()
+  if DO_VISUALS:
+    cv2.destroyAllWindows()
 
 
 def main():
@@ -465,18 +470,15 @@ if __name__ == '__main__':
   # filename = 'john2.mp4' # Slight motion, clean but slow
   # filename = 'swivel.mp4' # Moving around a fancy gold board
 
-  allfiles = ['output2.avi', 'random1.mp4', 'match2.mp4','output.avi','output.mp4',
+  allfiles = ['chess_beer.mp4', 'random1.mp4', 'match2.mp4','output.avi','output.mp4',
     'speedchess1.mp4','wgm_1.mp4','gm_magnus_1.mp4',
-    'bro_1.mp4','chess_beer.mp4','john1.mp4','john2.mp4','swivel.mp4']
+    'bro_1.mp4','output2.avi','john1.mp4','john2.mp4','swivel.mp4']
 
-  # for filename in allfiles:
-  for filename in [filename]:
+  for filename in allfiles:
+  # for filename in [filename]:
     fullpath = 'datasets/raw/videos/%s' % filename
     output_folder_prefix = 'results'
     processFrame.prevBoardpts = None
     processFrame.prevGray = None
     print('\n\n - ON %s\n\n' % fullpath)
-    videostream(fullpath, output_folder_prefix, True, MAX_FRAME=1000)
-
-
-
+    videostream(fullpath, output_folder_prefix, True, MAX_FRAME=1000, DO_VISUALS=False)

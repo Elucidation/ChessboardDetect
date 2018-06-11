@@ -6,7 +6,7 @@ import numpy as np
 from tensorflow.contrib.data import Dataset
 import random
 
-def loadDatapaths(parent_folder, max_count_each_entries=None, do_shuffle=True):
+def loadDatapaths(parent_folder, max_count_each_entries=None, do_shuffle=True, make_equal=False):
   # Builds and returns a dataset of images from the
   # good/ and bad/ subfolders of the parent folder.
   folder_good = '%s/good' % parent_folder
@@ -19,6 +19,12 @@ def loadDatapaths(parent_folder, max_count_each_entries=None, do_shuffle=True):
   if max_count_each_entries:
     filepaths_good = filepaths_good[:max_count_each_entries]
     filepaths_bad = filepaths_bad[:max_count_each_entries]
+
+  # Make count of good and bad equal
+  if make_equal:
+    n_each = min(len(filepaths_good), len(filepaths_bad))
+    filepaths_good = filepaths_good[:n_each]
+    filepaths_bad = filepaths_bad[:n_each]
 
   N_good, N_bad = len(filepaths_good), len(filepaths_bad)
 

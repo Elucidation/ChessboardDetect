@@ -7,7 +7,7 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-import tensorflow as tf
+# import tensorflow as tf
 import time
 import sys
 import skvideo.io
@@ -22,6 +22,7 @@ from tensorflow.contrib import predictor
 # export_dir = 'ml/model/003/1528406613' # newer still
 # export_dir = 'ml/model/004/1528441286' # win 21x21, 95% accuracy
 # export_dir = 'ml/model/005/1528489968' # win 21x21 96% accuracy
+
 export_dir = 'ml/model/006/1528565066' # win 21x21 97% accuracy
 predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
 
@@ -107,16 +108,16 @@ def getFinalSaddlePoints(img): # 32ms -> 15ms
 # def processSingle(filename='input/img_10.png'):
 #   img = loadImage(filename)
 #   spts = getFinalSaddlePoints(img)
-def input_fn_predict(img_data): # returns x, None
-  def ret_func():
-    dataset = tf.data.Dataset.from_tensor_slices(
-        {
-        'x':img_data
-        }
-      )
-    dataset = dataset.batch(25)
-    return dataset.make_one_shot_iterator().get_next(), None
-  return ret_func
+# def input_fn_predict(img_data): # returns x, None
+#   def ret_func():
+#     dataset = tf.data.Dataset.from_tensor_slices(
+#         {
+#         'x':img_data
+#         }
+#       )
+#     dataset = dataset.batch(25)
+#     return dataset.make_one_shot_iterator().get_next(), None
+#   return ret_func
 
 def removeOutlierSimplices(tri):
     dists = np.zeros([tri.nsimplex, 3])

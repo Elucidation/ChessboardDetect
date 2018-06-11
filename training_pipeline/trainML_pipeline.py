@@ -8,15 +8,31 @@ random.seed(100)
 # Load dataset.
 winsize=10
 dataset_folder = '../datasets/dataset_gray_%d' % winsize
-f_imgs, f_labels = preprocess.loadDatapaths(dataset_folder)
+f_imgs, f_labels = preprocess.loadDatapaths(dataset_folder, make_equal=True)
+
+# Add on chess_beer video frames
+dataset_folder = '../results/chess_beer_vidstream_frames/tiles'
+f_imgs2, f_labels2 = preprocess.loadDatapaths(dataset_folder, make_equal=True)
+# Append.
+f_imgs += f_imgs2
+f_labels += f_labels2
+
+# Add match2
+dataset_folder = '../results/match2_vidstream_frames/tiles'
+f_imgs2, f_labels2 = preprocess.loadDatapaths(dataset_folder, make_equal=True)
+# Append.
+f_imgs += f_imgs2
+f_labels += f_labels2
+
 tr_imgs, tr_labels, val_imgs, val_labels = preprocess.buildDataset(f_imgs, f_labels)
 dataset_length = len(f_imgs)
-print("Loaded dataset '%s' : %d entries" % (dataset_folder, dataset_length))
+n_good = sum(f_labels)
+print("Loaded dataset '%s' : %d entries (%d good, %d bad)" % (dataset_folder, dataset_length, n_good, dataset_length - n_good ))
 
 # Build model.
 feature_img = tf.feature_column.numeric_column("x", shape=[21,21], dtype=tf.uint8)
 units = [512,256,128]
-model_dir = './training_models/norm_win%s_%s' % (winsize, "_".join(map(str,units)))
+model_dir = './training_models/norm_win%s_%s_dataset_%d' % (winsize, "_".join(map(str,units)), dataset_length)
 print("Using DNNClassifier %s : Output to %s" % (units, model_dir))
 estimator = tf.estimator.DNNClassifier(
   feature_columns=[feature_img],
@@ -28,8 +44,8 @@ estimator = tf.estimator.DNNClassifier(
   )
 ############################
 # Train (For steps * train_steps = total steps)
-steps = 1000
-train_steps = 1000 
+steps = 10000
+train_steps = 5000 
 for i in range(steps):
   # Test
   print("Training %d-%d/%d" % (i*train_steps,(i+1)*train_steps,steps*train_steps))
