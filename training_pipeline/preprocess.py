@@ -50,10 +50,11 @@ def input_parser(img_path, label):
 
   return img_decoded, label
 
-def randomize_image(img, contrast_range=[0.4,0.6], brightness_max=0.2):
-  # Apply random flips and contrast/brightness changes to image
+def randomize_image(img, contrast_range=[0.2,1.8], brightness_max=63):
+  # Apply random flips/rotations and contrast/brightness changes to image
   img = tf.image.random_flip_left_right(img)
   img = tf.image.random_flip_up_down(img)
+  img = tf.image.rot90(img, k=np.random.randint(4))
   img = tf.image.random_contrast(img, lower=contrast_range[0], upper=contrast_range[1])
   img = tf.image.random_brightness(img, max_delta=brightness_max)
   return img
@@ -69,6 +70,9 @@ def preprocessor(dataset, batch_size, dataset_length=None, is_training=False):
   if is_training:
     # Slightly randomize images.
     dataset = dataset.map(lambda img, label: (randomize_image(img), label))
+
+  # Zero mean and unit normalize images, float image output.
+  dataset = dataset.map(lambda img, label: (tf.image.per_image_standardization(img), label))
 
   # Batch and repeat.
   dataset = dataset.batch(batch_size)

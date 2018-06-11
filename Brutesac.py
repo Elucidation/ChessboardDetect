@@ -167,7 +167,7 @@ def refineHomography(pts, M, best_offset):
   return M_homog
 
 @timed
-def preditOnTiles(tiles):
+def predictOnTiles(tiles):
   predictions = RunExportedMLOnImage.predict_fn(
     {"x": tiles})
 
@@ -176,7 +176,7 @@ def preditOnTiles(tiles):
   return np.array([p[0] for p in predictions['class_ids']])
 
 @timed
-def classifyPoints(pts, img_gray, WINSIZE = 10):
+def getValidMLPoints(pts, img_gray, WINSIZE = 10):
   # Build tiles to run classifier on.
   tiles = []
   pred_pts = []
@@ -195,17 +195,41 @@ def classifyPoints(pts, img_gray, WINSIZE = 10):
   tiles = np.array(tiles, dtype=np.uint8)
 
   # Classify tiles.
-  probs = preditOnTiles(tiles)
+  probs = predictOnTiles(tiles)
 
   ml_pts = np.array(pred_pts)[probs>0.5,:]
 
   return ml_pts
 
 @timed
+def classifyPoints(pts, img_gray, WINSIZE = 10):
+  # Build tiles to run classifier on.
+  tiles = []
+  for pt in pts:
+    # Build tiles
+    if (np.any(pt <= WINSIZE) or np.any(pt >= np.array([img_gray.shape[1], img_gray.shape[0]]) - WINSIZE)):
+      tiles.append(np.zeros([WINSIZE*2+1, WINSIZE*2+1], dtype=np.uint8)) # Pass zero matrix to inference.
+      # continue
+    else:
+      # Note: pts expects x,y image coordinates, not r,c row coordinates, so flip.
+      tile = img_gray[pt[1]-WINSIZE:pt[1]+WINSIZE+1, pt[0]-WINSIZE:pt[0]+WINSIZE+1]
+      tiles.append(tile)
+
+  if tiles == []:
+    return []
+
+  tiles = np.array(tiles, dtype=np.uint8)
+
+  # Classify tiles.
+  probs = predictOnTiles(tiles)
+
+  return probs
+
+@timed
 def classifyImage(img_gray, WINSIZE = 10):
   spts = RunExportedMLOnImage.getFinalSaddlePoints(img_gray)
 
-  return classifyPoints(spts, img_gray, WINSIZE)
+  return getValidMLPoints(spts, img_gray, WINSIZE)
 
 @timed
 def processFrame(gray):

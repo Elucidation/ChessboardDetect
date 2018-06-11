@@ -37,7 +37,7 @@ def getSaddle(gray_img):
     S = -gxx*gyy + gxy**2
     return S
 
-def fast_nonmax_sup(img, win=21):
+def fast_nonmax_sup(img, win=11):
   element = np.ones([win, win], np.uint8)
   img_dilate = cv2.dilate(img, element)
   peaks = cv2.compare(img, img_dilate, cv2.CMP_EQ)

@@ -17,9 +17,9 @@ lk_params = dict( winSize  = (15,15),
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
 @Brutesac.timed
-def calculateOnFrame(gray, old_pts=None, old_gray=None):
+def calculateOnFrame(gray, old_pts=None, old_gray=None, minPointsForLK=10):
   # and return M for chessboard from image
-  if old_pts is not None and old_pts.shape[0] > 10:
+  if old_pts is not None:
     # calculate optical flow
     pts, st, err = cv2.calcOpticalFlowPyrLK(old_gray, gray, old_pts.astype(np.float32), None, **lk_params)
     # pts = np.round(pts).astype(np.int32)
@@ -28,21 +28,34 @@ def calculateOnFrame(gray, old_pts=None, old_gray=None):
     # only points that moved less than a couple pixels
     valid[np.abs(pts-old_pts).max(axis=1) > 5] = 0
 
+    # Only points that are considered ML points (with lots of forgiveness).
+    # validChessPoints = Brutesac.classifyPoints(pts.astype(np.int32), gray) > 0.3
+    # valid[~validChessPoints] = 0
+
     pts = pts[valid,:]
+    if len(pts) > minPointsForLK:
 
-    # spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
-    # newpts = []
-    # for i, pt in enumerate(pts):
-    #   d = np.abs(spts - pt)
-    #   best_spt = d.max(axis=1).argmin()
-    #   score = np.sum(d[best_spt,:])
-    #   # print(pt, spts[best_spt,:], score)
-    #   if score < 10:
-    #     newpts.append(spts[best_spt,:])
-    # pts = np.array(newpts)
+      # Update the valid points to the closest saddle point if possible
+      spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
+      spts = spts[:,[1,0]]
+      newpts = []
+      for i, pt in enumerate(pts):
+        d = np.sum((spts - pt)**2, axis=1)
+        best_spt_idx = d.argmin()
+        # best_spt_idx = d.max(axis=1).argmin()
+        # print(pt, spts[best_spt_idx,:], score)
+        if d[best_spt_idx] < 3**2:
+          newpts.append(spts[best_spt_idx,:])
+        elif d[best_spt_idx] < 10**2:
+          newpts.append(pt)
+      if not newpts:
+        pts = np.zeros([0,2])
+      else:
+        pts = np.array(newpts)
 
-    print("LK")
-  else:
+      print("LK")
+  
+  if old_pts is None or pts.shape[0] < minPointsForLK:
     pts = Brutesac.classifyImage(gray)
     if len(pts) == 0:
       return pts, []
@@ -191,7 +204,7 @@ def processFrame(frame, gray):
   # cv2.drawContours(frame,contours,-1,(0,255,255),2)
 
   # Draw xcorner points
-  for pt in pts:
+  for pt in pts.astype(np.int64):
     cv2.circle(frame, tuple(pt), 3, (0,0,255), -1)
 
 
@@ -205,22 +218,59 @@ def processFrame(frame, gray):
     unwarped_ideal_chess_corners = cv2.perspectiveTransform(
         np.expand_dims(ideal_grid_pts.astype(float),0), M_ideal_to_real)[0,:,:]
 
+    # Before offset
+    # cv2.polylines(frame, 
+    #   [unwarped_ideal_chess_corners.astype(np.int32)], 
+    #   isClosed=True, thickness=0, color=(0,0,55))
+
+    # Get a rectified chessboard image
+    aligned_chess_corners = getAlignedChessCorners(unwarped_ideal_chess_corners[:4,:])
+
+
+    tile_size = 32
+    warpFrameQuad = np.array([[0,1],[1,1],[1,0],[0,0]],dtype=np.float32)
+    warpFrameQuad = (warpFrameQuad*(8)+2)*tile_size
+    warpM = cv2.getPerspectiveTransform(aligned_chess_corners.astype(np.float32), warpFrameQuad)
+
+    warp_frame_gray = cv2.warpPerspective(gray, warpM, (tile_size*12,tile_size*12))
+
+
+    # Rectify grayscale chessboard image and find best offset for where chessboard really is
+    # This undos potential off-by-[1,2] errors from propogated Classify/LK mistakes.
+    best_offset, _ = findBestBoardViaTiles(warp_frame_gray)
+    best_offset = (best_offset[0]-2, best_offset[1]-2) # Center on 1
+    # best_offset = (0,0)
+    # print(best_offset)
+
+    # Rebuild ideal grid points with offset
+    ideal_grid_pts -= best_offset
+    all_ideal_grid_pts -= best_offset
+
+    unwarped_ideal_chess_corners = cv2.perspectiveTransform(
+        np.expand_dims(ideal_grid_pts.astype(float),0), M_ideal_to_real)[0,:,:]
+    aligned_chess_corners = getAlignedChessCorners(unwarped_ideal_chess_corners[:4,:])
+
     unwarped_all_chesspts = cv2.perspectiveTransform(
         np.expand_dims(all_ideal_grid_pts.astype(float),0), M_ideal_to_real)[0,:,:]
+    warpM = cv2.getPerspectiveTransform(aligned_chess_corners.astype(np.float32), warpFrameQuad)
 
     cv2.polylines(frame, 
       [unwarped_ideal_chess_corners.astype(np.int32)], 
       isClosed=True, thickness=4, color=(0,0,255))
 
+    # cv2.circle(frame, tuple(unwarped_ideal_chess_corners[0,:].astype(np.int32)), 3, (255,255,255), -1)
     cv2.circle(frame, tuple(unwarped_ideal_chess_corners[0,:].astype(np.int32)), 3, (255,255,255), -1)
 
     # Keep only points that are classified as chess corner points
-    # validChessPoints = Brutesac.classifyPoints(unwarped_all_chesspts[:,[1,0]].astype(np.int32), gray)
-    # validChessPoints = validChessPoints[:,[1,0]]
+    # validChessPoints = Brutesac.classifyPoints(unwarped_all_chesspts[:,[1,0]].astype(np.int32), gray)[:,[1,0]]
+    # validChessPoints = Brutesac.classifyPoints(unwarped_all_chesspts.astype(np.int32), gray)
     validChessPoints = unwarped_all_chesspts
 
-    for unwarped_chess_pt in unwarped_all_chesspts.astype(np.int32):
-      cv2.circle(frame, tuple(unwarped_chess_pt), 2, (0,255,255), -1)
+    # for chess_pt in validChessPoints.astype(np.int32):
+    #   cv2.circle(frame, tuple(chess_pt), 2, (0,255,255), -1)
+
+    # for unwarped_chess_pt in unwarped_all_chesspts.astype(np.int32):
+    #   cv2.circle(frame, tuple(unwarped_chess_pt), 2, (0,255,255), -1)
 
     # for valid_chess_pt in validChessPoints.astype(np.int32):
     #   cv2.circle(frame, tuple(valid_chess_pt), 2, (0,255,0), -1)
@@ -231,15 +281,13 @@ def processFrame(frame, gray):
     processFrame.prevBoardpts = validChessPoints
     processFrame.prevGray = gray.copy()
 
-    # Get a rectified chessboard image
-    aligned_chess_corners = getAlignedChessCorners(unwarped_ideal_chess_corners[:4,:])
-
-    tile_size = 32
-    warpFrameQuad = np.array([[0,1],[1,1],[1,0],[0,0]],dtype=np.float32)
-    warpFrameQuad = (warpFrameQuad*(8)+2)*tile_size
-    warpM = cv2.getPerspectiveTransform(aligned_chess_corners.astype(np.float32), warpFrameQuad)
-
     warpFrame = cv2.warpPerspective(frame_orig, warpM, (tile_size*12,tile_size*12))
+
+    # idealQuad = np.array([[0,1],[1,1],[1,0],[0,0]],dtype=np.float32)
+    # actual_chessboard_corners = cv2.perspectiveTransform(
+    #     np.expand_dims(idealQuad.astype(float),0), M_ideal_to_real)[0,:,:]
+    # M = cv2.getPerspectiveTransform(unwarped_ideal_chess_corners.astype(np.float32), idealQuad)
+    # M_homog = np.linalg.inv(warpM)
 
   else:
     processFrame.prevBoardpts = None
@@ -250,6 +298,34 @@ def processFrame(frame, gray):
 
 processFrame.prevBoardpts = None
 processFrame.prevGray = None
+
+def sumpool(a, shape):
+  # re-bins array summing up components.
+  sh = shape[0],a.shape[0]//shape[0],shape[1],a.shape[1]//shape[1]
+  return a.reshape(sh).sum(-1).sum(1)
+
+@Brutesac.timed
+def findBestBoardViaTiles(warp_frame_img_gray, tile_px=32):
+  tilesum = sumpool(warp_frame_img_gray, np.array(warp_frame_img_gray.shape)/tile_px).astype(np.int64)
+
+  # Now try 8x8 subsquares of this 12x12 array and take the 
+  # difference between the sum of white and sum of black tiles (abs)
+  # and use that as a score.
+  same_color_tile_mask = np.tile(np.eye(2,dtype=bool),[4,4])
+  i,j = 0,0
+
+  best_score = 0
+  best_idx = (-1,-1)
+  for i in range(5):
+    for j in range(5):
+      sx = np.sum(tilesum[i:i+8,j:j+8][same_color_tile_mask])
+      sy = np.sum(tilesum[i:i+8,j:j+8][~same_color_tile_mask])
+      score = np.abs(sx-sy)
+      if score > best_score:
+        best_score = score
+        best_idx = (j, i)
+
+  return best_idx, tilesum
 
 def getAlignedChessCorners(unaligned_corners):
   # Rotate corners until first point is closest to the top-left of the image and return.
@@ -272,17 +348,18 @@ def getWarpedChessboard(img, M, tile_px=32):
 
 
 
-def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
-  print("Loading video %s" % filename)
-  # vidstream = skvideo.io.vread(filename, num_frames=4000)
+def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAME=True):
+  print("Loading video %s" % filepath)
+  # vidstream = skvideo.io.vread(filepath, num_frames=4000)
   # Load frame-by-frame
-  vidstream = skvideo.io.vreader(filename)
+  vidstream = skvideo.io.vreader(filepath)
   print("Finished loading")
   # print(vidstream.shape)
 
   # ffmpeg -i vidstream_frames/ml_frame_%03d.jpg -c:v libx264 -vf "fps=25,format=yuv420p"  test.avi -y
+  filename = os.path.basename(filepath)
 
-  output_folder = "%s_vidstream_frames" % (filename[:-4])
+  output_folder = "%s/%s_vidstream_frames" % (output_folder_prefix, filename[:-4])
   if not os.path.exists(output_folder):
     os.mkdir(output_folder)
 
@@ -290,11 +367,13 @@ def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
   # Following lines is the frame number and the flattened M matrix for the chessboard
   output_filepath_pts = '%s/pts.txt' % (output_folder)
   with open(output_filepath_pts, 'w') as f:
-    f.write('%s\n' % filename)
+    f.write('%s\n' % filepath)
 
   for i, frame in enumerate(vidstream):
-    # if i < 2000:
+    # if i < 290:
     #   continue
+    # if i == 410:
+    #   break
     print("Frame %d" % i)
     # if (i%5!=0):
     #   continue
@@ -372,8 +451,6 @@ def main():
 
 if __name__ == '__main__':
   # main()
-  # filename = 'carlsen_match.mp4'
-  # filename = 'carlsen_match2.mp4'
   # filename = 'output2.avi' # Slow low rez
   # filename = 'random1.mp4' # Long video wait for 1k frames or so
   # filename = 'match2.mp4' # difficult
@@ -381,13 +458,19 @@ if __name__ == '__main__':
   # filename = 'output.mp4' # Hard
   # filename = 'speedchess1.mp4' # Great example
   # filename = 'wgm_1.mp4' # Lots of motion blur, slow
-  # filename = 'gm_magnus_1.mp4' # Hard lots of scene transitions and blurry
+  # filename = 'gm_magnus_1.mp4' # Hard lots of scene transitions and blurry (init state with all pieces in a row not so good).
   # filename = 'bro_1.mp4' # Little movement, easy.
-  filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
+  # filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
   # filename = 'john1.mp4' # Simple clean
-  # filename = 'john2.mp4' # Slight motion, clean but slow
+  filename = 'john2.mp4' # Slight motion, clean but slow
   # filename = 'swivel.mp4' # Moving around a fancy gold board
-  videostream(filename, True)
+
+  allfiles = ['output2.avi','random1.mp4','match2.mp4','output.avi','output.mp4','speedchess1.mp4','wgm_1.mp4','gm_magnus_1.mp4','bro_1.mp4','chess_beer.mp4','john1.mp4','john2.mp4','swivel.mp4']
+
+  for filename in [filename]:
+    fullpath = 'datasets/raw/videos/%s' % filename
+    output_folder_prefix = 'results'
+    videostream(fullpath, output_folder_prefix, True)
 
 
 

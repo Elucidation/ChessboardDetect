@@ -8,7 +8,7 @@ random.seed(100)
 # Load dataset.
 winsize=10
 dataset_folder = '../datasets/dataset_gray_%d' % winsize
-f_imgs, f_labels = preprocess.loadDatapaths(dataset_folder, max_count_each_entries=6000)
+f_imgs, f_labels = preprocess.loadDatapaths(dataset_folder)
 tr_imgs, tr_labels, val_imgs, val_labels = preprocess.buildDataset(f_imgs, f_labels)
 dataset_length = len(f_imgs)
 print("Loaded dataset '%s' : %d entries" % (dataset_folder, dataset_length))
@@ -16,7 +16,7 @@ print("Loaded dataset '%s' : %d entries" % (dataset_folder, dataset_length))
 # Build model.
 feature_img = tf.feature_column.numeric_column("x", shape=[21,21], dtype=tf.uint8)
 units = [512,256,128]
-model_dir = './training_models/v_win%s_%s' % (winsize, "_".join(map(str,units)))
+model_dir = './training_models/norm_win%s_%s' % (winsize, "_".join(map(str,units)))
 print("Using DNNClassifier %s : Output to %s" % (units, model_dir))
 estimator = tf.estimator.DNNClassifier(
   feature_columns=[feature_img],
