@@ -190,7 +190,7 @@ def getValidMLPoints(pts, img_gray, WINSIZE = 10):
       pred_pts.append(pt)
 
   if tiles == []:
-    return []
+    return np.array([])
 
   tiles = np.array(tiles, dtype=np.uint8)
 

@@ -72,7 +72,7 @@ def calculateOnFrame(gray, old_pts=None, old_gray=None, minPointsForLK=10):
 
   contours, hierarchy = pruneContours(contours, hierarchy, pts)
 
-  return pts, contours
+  return np.array(pts), contours
 
 # @Brutesac.timed
 def simplifyContours(contours):
@@ -293,8 +293,9 @@ def processFrame(frame, gray):
     processFrame.prevBoardpts = None
     processFrame.prevGray = None
     warpFrame = None
+    aligned_chess_corners = None
 
-  return frame, warpFrame, M_homog
+  return frame, warpFrame, aligned_chess_corners
 
 processFrame.prevBoardpts = None
 processFrame.prevGray = None
@@ -348,7 +349,7 @@ def getWarpedChessboard(img, M, tile_px=32):
 
 
 
-def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAME=True):
+def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAME=True, MAX_FRAME=None):
   print("Loading video %s" % filepath)
   # vidstream = skvideo.io.vread(filepath, num_frames=4000)
   # Load frame-by-frame
@@ -370,10 +371,10 @@ def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAM
     f.write('%s\n' % filepath)
 
   for i, frame in enumerate(vidstream):
-    # if i < 290:
+    # if i < 300:
     #   continue
-    # if i == 410:
-    #   break
+    if i == MAX_FRAME:
+      break
     print("Frame %d" % i)
     # if (i%5!=0):
     #   continue
@@ -389,7 +390,7 @@ def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAM
     #   break;
 
     a = time.time()
-    frame, warpFrame, M = processFrame(frame, gray)
+    frame, warpFrame, chessboard_corners = processFrame(frame, gray)
     t_proc = time.time() - a
 
     # Add frame counter
@@ -409,15 +410,15 @@ def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAM
       else:
         cv2.imwrite(output_filepath_warp, warpFrame)
 
-      # Append line of frame index and M matrix
-      if M is not None:
+      # Append line of frame index and chessboard_corners matrix
+      if chessboard_corners is not None:
         with open(output_filepath_pts, 'a') as f:
-          M_str = ','.join(map(str,M.flatten()))
+          chessboard_corners_str = ','.join(map(str,chessboard_corners.flatten()))
           # M_str = M.tostring() # binary
-          f.write(u'%d,%s\n' % (i, M_str))
+          f.write(u'%d,%s\n' % (i, chessboard_corners_str))
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    # if cv2.waitKey(1) & 0xFF == ord('q'):
+    #     break
 
   # When everything done, release the capture
   # cap.release()
@@ -465,12 +466,17 @@ if __name__ == '__main__':
   filename = 'john2.mp4' # Slight motion, clean but slow
   # filename = 'swivel.mp4' # Moving around a fancy gold board
 
-  allfiles = ['output2.avi','random1.mp4','match2.mp4','output.avi','output.mp4','speedchess1.mp4','wgm_1.mp4','gm_magnus_1.mp4','bro_1.mp4','chess_beer.mp4','john1.mp4','john2.mp4','swivel.mp4']
+  allfiles = ['output2.avi', 'random1.mp4', 'match2.mp4','output.avi','output.mp4',
+    'speedchess1.mp4','wgm_1.mp4','gm_magnus_1.mp4',
+    'bro_1.mp4','chess_beer.mp4','john1.mp4','john2.mp4','swivel.mp4']
 
-  for filename in [filename]:
+  for filename in allfiles:
     fullpath = 'datasets/raw/videos/%s' % filename
     output_folder_prefix = 'results'
-    videostream(fullpath, output_folder_prefix, True)
+    processFrame.prevBoardpts = None
+    processFrame.prevGray = None
+    print('\n\n - ON %s\n\n' % fullpath)
+    videostream(fullpath, output_folder_prefix, True, MAX_FRAME=1000)
 
 
 
