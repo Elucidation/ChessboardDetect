@@ -7,7 +7,6 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-# import tensorflow as tf
 import time
 import sys
 import skvideo.io
@@ -15,7 +14,7 @@ np.set_printoptions(suppress=True, linewidth=200) # Better printing of arrays
 
 from scipy.spatial import Delaunay
 
-from tensorflow.contrib import predictor
+
 
 # export_dir = 'ml/model/001/1521934334' # old
 # export_dir = 'ml/model/002/1528405915' # newer (same dataset, but random image changes)
@@ -23,8 +22,12 @@ from tensorflow.contrib import predictor
 # export_dir = 'ml/model/004/1528441286' # win 21x21, 95% accuracy
 # export_dir = 'ml/model/005/1528489968' # win 21x21 96% accuracy
 
-export_dir = 'ml/model/006/1528565066' # win 21x21 97% accuracy
-predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
+# export_dir = 'ml/model/006/1528565066' # win 21x21 97% accuracy
+# predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
+
+def getModel(export_dir='ml/model/006/1528565066'):
+  from tensorflow.contrib import predictor
+  return predictor.from_saved_model(export_dir, signature_def_key='predict')
 
 # Saddle
 def getSaddle(gray_img):
@@ -247,7 +250,7 @@ def calculateOutliers(pts, threshold_mult = 2.5):
   ctr = np.mean(pts, axis=0)
   return (np.any(np.abs(pts-ctr) > threshold_mult * std, axis=1))
 
-def processImage(img_gray):
+def processImage(img_gray, predict_fn):
   print("Processing.")
   a_start = time.time()
   spts = getFinalSaddlePoints(img_gray)
@@ -328,6 +331,8 @@ def main(SAVE_FRAME=False):
   n = len(filenames)
   # n = 5
 
+  predict_fn = getModel()
+
   WINSIZE = 5
 
   output_folder = 'ml_images'
@@ -338,7 +343,7 @@ def main(SAVE_FRAME=False):
     filename = filenames[i]
     print ("Processing %d/%d : %s" % (i+1,n,filename))
     img, img_gray = loadImage(filename)
-    inlier_pts, outlier_pts, pred_pts, final_predictions, prediction_levels, tri, simplices_mask = processImage(img_gray)
+    inlier_pts, outlier_pts, pred_pts, final_predictions, prediction_levels, tri, simplices_mask = processImage(img_gray, predict_fn)
 
     b,g,r = cv2.split(img)       # get b,g,r
     rgb_img = cv2.merge([r,g,b])     # switch it to rgb

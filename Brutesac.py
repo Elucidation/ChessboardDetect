@@ -167,8 +167,8 @@ def refineHomography(pts, M, best_offset):
   return M_homog
 
 @timed
-def predictOnTiles(tiles):
-  predictions = RunExportedMLOnImage.predict_fn(
+def predictOnTiles(tiles, predict_fn):
+  predictions = predict_fn(
     {"x": tiles})
 
   # Return array of probability of tile being an xcorner.
@@ -176,7 +176,7 @@ def predictOnTiles(tiles):
   return np.array([p[0] for p in predictions['class_ids']])
 
 @timed
-def getValidMLPoints(pts, img_gray, WINSIZE = 10):
+def getValidMLPoints(pts, img_gray, predict_fn, WINSIZE = 10):
   # Build tiles to run classifier on.
   tiles = []
   pred_pts = []
@@ -195,14 +195,14 @@ def getValidMLPoints(pts, img_gray, WINSIZE = 10):
   tiles = np.array(tiles, dtype=np.uint8)
 
   # Classify tiles.
-  probs = predictOnTiles(tiles)
+  probs = predictOnTiles(tiles, predict_fn)
 
   ml_pts = np.array(pred_pts)[probs>0.5,:]
 
   return ml_pts
 
 @timed
-def classifyPoints(pts, img_gray, WINSIZE = 10):
+def classifyPoints(pts, img_gray, predict_fn, WINSIZE = 10):
   # Build tiles to run classifier on.
   tiles = []
   for pt in pts:
@@ -221,15 +221,15 @@ def classifyPoints(pts, img_gray, WINSIZE = 10):
   tiles = np.array(tiles, dtype=np.uint8)
 
   # Classify tiles.
-  probs = predictOnTiles(tiles)
+  probs = predictOnTiles(tiles, predict_fn)
 
   return probs
 
 @timed
-def classifyImage(img_gray, WINSIZE = 10):
+def classifyImage(img_gray, predict_fn, WINSIZE = 10):
   spts = RunExportedMLOnImage.getFinalSaddlePoints(img_gray)
 
-  return getValidMLPoints(spts, img_gray, WINSIZE)
+  return getValidMLPoints(spts, img_gray, predict_fn, WINSIZE)
 
 @timed
 def processFrame(gray):

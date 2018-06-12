@@ -6,19 +6,25 @@ import numpy as np
 from tensorflow.contrib.data import Dataset
 import random
 
-def loadDatapaths(parent_folder, max_count_each_entries=None, do_shuffle=True, make_equal=False):
-  # Builds and returns a dataset of images from the
-  # good/ and bad/ subfolders of the parent folder.
-  folder_good = '%s/good' % parent_folder
-  folder_bad = '%s/bad' % parent_folder
+def loadMultipleDatapaths(parent_folder_list, max_count_each_entries=None, pre_shuffle=False, do_shuffle=True, make_equal=False):
+  # Pass list of folder paths
+  filepaths_good = []
+  filepaths_bad = []
+  for parent_folder in parent_folder_list:
+    folder_filepaths_good = glob.glob("%s/good/*.png" % parent_folder)
+    folder_filepaths_bad = glob.glob("%s/bad/*.png" % parent_folder)
 
-  filepaths_good = glob.glob("%s/*.png" % folder_good)
-  filepaths_bad = glob.glob("%s/*.png" % folder_bad)
+    if pre_shuffle:
+      # Shuffle individual folder paths
+      random.shuffle(folder_filepaths_good)
+      random.shuffle(folder_filepaths_bad)
 
-  # Use only up to max_count_each_entries of each for training equally.
-  if max_count_each_entries:
-    filepaths_good = filepaths_good[:max_count_each_entries]
-    filepaths_bad = filepaths_bad[:max_count_each_entries]
+    if max_count_each_entries:
+      folder_filepaths_good = folder_filepaths_good[:max_count_each_entries]
+      folder_filepaths_bad = folder_filepaths_bad[:max_count_each_entries]
+
+    filepaths_good.extend(folder_filepaths_good)
+    filepaths_bad.extend(folder_filepaths_bad)
 
   # Make count of good and bad equal
   if make_equal:
@@ -37,9 +43,9 @@ def loadDatapaths(parent_folder, max_count_each_entries=None, do_shuffle=True, m
     random.shuffle(entries)
   # Separate back into imgs / labels and return.
   imgs, labels = zip(*entries)
-  return imgs, labels
+  return tf.constant(imgs), tf.constant(labels), len(labels), sum(labels)
 
-def buildDataset(img_paths, labels, train_test_split_percentage=0.8):
+def buildBothDatasets(img_paths, labels, train_test_split_percentage=0.8):
   # Split into training and test
   split = int(len(img_paths) * train_test_split_percentage)
   tr_imgs = tf.constant(img_paths[:split])
@@ -87,7 +93,7 @@ def preprocessor(dataset, batch_size, dataset_length=None, is_training=False):
 
   return dataset
 
-def input_fn(imgs, labels, dataset_length=None, is_training=True, batch_size=50):
+def input_fn(imgs, labels, dataset_length=None, is_training=False, batch_size=50):
   # Returns an appropriate input function for training/evaluation.
   def sub_input_fn():
     dataset = Dataset.from_tensor_slices((imgs, labels))

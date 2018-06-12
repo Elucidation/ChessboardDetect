@@ -17,7 +17,7 @@ lk_params = dict( winSize  = (15,15),
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
 @Brutesac.timed
-def calculateOnFrame(gray, old_pts=None, old_gray=None, minPointsForLK=10):
+def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsForLK=10):
   # and return M for chessboard from image
   if old_pts is not None:
     # calculate optical flow
@@ -55,7 +55,7 @@ def calculateOnFrame(gray, old_pts=None, old_gray=None, minPointsForLK=10):
       print("LK")
   
   if old_pts is None or pts.shape[0] < minPointsForLK:
-    pts = Brutesac.classifyImage(gray)
+    pts = Brutesac.classifyImage(gray, predict_fn)
     if len(pts) == 0:
       return pts, []
     # pts = np.loadtxt('example_pts.txt')
@@ -189,9 +189,9 @@ def contourSacChessboard(xcorner_pts, quads):
 
 
 @Brutesac.timed
-def processFrame(frame, gray):
+def processFrame(frame, gray, predict_fn):
   frame_orig = frame.copy()
-  pts, contours = calculateOnFrame(gray, processFrame.prevBoardpts, processFrame.prevGray)
+  pts, contours = calculateOnFrame(gray, predict_fn, processFrame.prevBoardpts, processFrame.prevGray)
 
   raw_M, best_quad, best_offset, best_score, best_error_score = contourSacChessboard(pts, contours)
   if raw_M is not None:
@@ -346,7 +346,7 @@ def getWarpedChessboard(img, M, tile_px=32):
 
 
 
-def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAME=True, MAX_FRAME=None, DO_VISUALS=True):
+def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAME=True, MAX_FRAME=None, DO_VISUALS=True):
   print("Loading video %s" % filepath)
   # vidstream = skvideo.io.vread(filepath, num_frames=4000)
   # Load frame-by-frame
@@ -370,13 +370,14 @@ def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAM
   for i, frame in enumerate(vidstream):
     # if i < 300:
     #   continue
-    if i == MAX_FRAME:
+    if i >= MAX_FRAME:
+      print('Reached max frame %d >= %d' % (i, MAX_FRAME))
       break
     print("Frame %d" % i)
     # if (i%5!=0):
     #   continue
     
-    # frame = cv2.resize(frame, (320,240), interpolation = cv2.INTER_CUBIC)
+    frame = cv2.resize(frame, (960, 720), interpolation = cv2.INTER_CUBIC)
 
     # Our operations on the frame come here
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -387,7 +388,7 @@ def videostream(filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAM
     #   break;
 
     a = time.time()
-    overlay_frame, warpFrame, chessboard_corners = processFrame(frame.copy(), gray)
+    overlay_frame, warpFrame, chessboard_corners = processFrame(frame.copy(), gray, predict_fn)
     t_proc = time.time() - a
 
     # Add frame counter
@@ -465,20 +466,21 @@ if __name__ == '__main__':
   # filename = 'wgm_1.mp4' # Lots of motion blur, slow
   # filename = 'gm_magnus_1.mp4' # Hard lots of scene transitions and blurry (init state with all pieces in a row not so good).
   # filename = 'bro_1.mp4' # Little movement, easy.
-  filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
+  # filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
   # filename = 'john1.mp4' # Simple clean
   # filename = 'john2.mp4' # Slight motion, clean but slow
   # filename = 'swivel.mp4' # Moving around a fancy gold board
 
   allfiles = ['chess_beer.mp4', 'random1.mp4', 'match2.mp4','output.avi','output.mp4',
     'speedchess1.mp4','wgm_1.mp4','gm_magnus_1.mp4',
-    'bro_1.mp4','output2.avi','john1.mp4','john2.mp4','swivel.mp4']
+    'bro_1.mp4','output2.avi','john1.mp4','john2.mp4','swivel.mp4', 'sam2.mp4']
 
   for filename in allfiles:
-  # for filename in [filename]:
+  # for filename in ['sam2.mp4']:
     fullpath = 'datasets/raw/videos/%s' % filename
     output_folder_prefix = 'results'
     processFrame.prevBoardpts = None
     processFrame.prevGray = None
     print('\n\n - ON %s\n\n' % fullpath)
-    videostream(fullpath, output_folder_prefix, True, MAX_FRAME=1000, DO_VISUALS=False)
+    predict_fn = RunExportedMLOnImage.getModel()
+    videostream(predict_fn, fullpath, output_folder_prefix, True, MAX_FRAME=1000, DO_VISUALS=True)
