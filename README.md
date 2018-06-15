@@ -2,7 +2,7 @@
 
 *Note* : This repo is a staging ground of half-baked hacky code and different approaches to chessboard detection. Several different algorithms have been implemented each with varying tradeoffs.
 
-![SpeedChessTrackedLK](speedchess1_composite.gif)
+![SpeedChessTrackedLK](sam2_composite.gif)
 ![Live Detection Speed](speedchess1_ml.gif)
 ![Live Detection](output_ml.gif)
 
@@ -24,9 +24,9 @@ Once the best scoring grid is found, we try and fit a chessboard to the points i
 
 This is to be an evolution on [Tensorflow Chessbot](https://github.com/Elucidation/tensorflow_chessbot), working with real images.
 
-## Algorithm #4 DNNClassifier + Lucas-Kanade tracking for consistency through video frames (~50-200ms per frame)
+## Algorithm #4 CNN Classifier + Lucas-Kanade tracking for consistency through video frames (~50-200ms per frame)
 
-Training a DNNClassifier with ~12k tiles (6k each of true/false chess corners) gets us to roughly 96% success rate before over-training. Combining Algorithm #3 with a Lucas Kanade tracking of found chessboard points gives more consistent chessboards across frames. 
+Trained both a CNN and a DNN, found the CNN to work better. Trained with with ~12k tiles (6k each of true/false chess corners) gets us to roughly 96% success rate before over-training. Combining Algorithm #3 with a Lucas Kanade tracking of found chessboard points gives more consistent chessboards across frames. 
 
 ![SpeedChessTrackedLK](speedchess1_composite.gif)
 
