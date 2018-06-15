@@ -107,6 +107,7 @@ def cnn_model_ultrasmall(features, labels, mode, params):
 
   # Pooling Layer #1
   pool1 = tf.layers.max_pooling2d(inputs=conv1, pool_size=[2, 2], strides=2)
+  tf.summary.image('pool1', pool1[:,:,:,:3], max_outputs=5)
 
   # Convolutional Layer #2 and Pooling Layer #2
   conv2 = tf.layers.conv2d(
@@ -116,10 +117,11 @@ def cnn_model_ultrasmall(features, labels, mode, params):
       padding="same",
       activation=tf.nn.relu)
   pool2 = tf.layers.max_pooling2d(inputs=conv2, pool_size=[2, 2], strides=2)
+  tf.summary.image('pool2', pool2[:,:,:,:3], max_outputs=5)
 
   # Dense Layer
   pool2_flat = tf.reshape(pool2, [-1, 3 * 3 * params['filter_sizes'][1]])
-  dense = tf.layers.dense(inputs=pool2_flat, units=params['filter_sizes'][1], activation=tf.nn.relu)
+  dense = tf.layers.dense(inputs=pool2_flat, units=params['filter_sizes'][2], activation=tf.nn.relu)
   dropout = tf.layers.dropout(
       inputs=dense, rate=0.4, training=mode == tf.estimator.ModeKeys.TRAIN)
 

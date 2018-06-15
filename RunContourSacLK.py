@@ -41,33 +41,31 @@ def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsFor
 
     pts = pts[valid,:]
     if len(pts) > minPointsForLK:
-      # Calculate x-pts for the current image
-      # xpts = Brutesac.classifyImage(gray, predict_fn, WINSIZE=WINSIZE)
-      probabilities = Brutesac.predictOnImage(spts, gray, predict_fn, WINSIZE=WINSIZE)
-      xpts = spts[probabilities > probability_threshold,:]
+      if False:
+        # Calculate x-pts for the current image
+        # xpts = Brutesac.classifyImage(gray, predict_fn, WINSIZE=WINSIZE)
+        probabilities = Brutesac.predictOnImage(spts, gray, predict_fn, WINSIZE=WINSIZE)
+        xpts = spts[probabilities > probability_threshold,:]
 
-      # Find closest xpts
-      min_dists, min_dist_idx = cKDTree(xpts).query(pts, 1)
-      
-      keep_mask = min_dists < 4
-      replace_mask = np.logical_and(min_dists > 1, min_dists < 4)
+        # Find closest xpts
+        min_dists, min_dist_idx = cKDTree(xpts).query(pts, 1)
+        
+        keep_mask = min_dists < 4
+        replace_mask = np.logical_and(min_dists > 1, min_dists < 4)
 
-      # Update those xpts that are within the right range and throw out those
-      # too far away
-      pts[replace_mask,:] = xpts[min_dist_idx[replace_mask],:]
-      pts = pts[keep_mask,:]
+        # Update those xpts that are within the right range and throw out those
+        # too far away
+        pts[replace_mask,:] = xpts[min_dist_idx[replace_mask],:]
+        pts = pts[keep_mask,:]
+      else:
+        # Update the valid points to the closest saddle point if possible
+        min_dists, min_dist_idx = cKDTree(spts).query(pts, 1)
+        
+        keep_mask = min_dists < 4
+        replace_mask = np.logical_and(min_dists > 1, min_dists < 4)
 
-      # Update the valid points to the closest saddle point if possible
-      # spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
-      # # Returns in x,y column order
-
-      # min_dists, min_dist_idx = cKDTree(spts).query(pts, 1)
-      
-      # keep_mask = min_dists < 3**2
-      # replace_mask = np.logical_and(min_dists > 1, min_dists < 3**2)
-
-      # pts[replace_mask,:] = spts[min_dist_idx[replace_mask],:]
-      # pts = pts[keep_mask,:]
+        pts[replace_mask,:] = spts[min_dist_idx[replace_mask],:]
+        pts = pts[keep_mask,:]
       print("LK")
   else:
   # if old_pts is None or pts.shape[0] < minPointsForLK:
@@ -217,24 +215,24 @@ def processFrame(frame, gray, predict_fn):
   cv2.drawContours(frame,contours,-1,(0,255,0),1)
 
   # Draw xcorner points
-  for pt in pts.astype(np.int64):
+  for pt in np.round(pts).astype(np.int64):
     # cv2.circle(frame, tuple(pt), 3, (0,0,255), -1)
     cv2.rectangle(frame, tuple(pt-1),tuple(pt+1), (0,0,255), -1)
 
 
-  ideal_grid_pts = np.vstack([np.array([0,0,1,1,0])*8-1, np.array([0,1,1,0,0])*8-1]).T
+  ideal_grid_pts = np.vstack([np.array([0,0,1,1,0])*8-1, np.array([0,1,1,0,0])*8-1]).T.astype(np.float32)
   xx,yy = np.meshgrid(np.arange(7), np.arange(7))
-  all_ideal_grid_pts = np.vstack([xx.flatten(), yy.flatten()]).T
+  all_ideal_grid_pts = np.vstack([xx.flatten(), yy.flatten()]).T.astype(np.float32)
 
   if M_homog is not None:
     M_ideal_to_real = np.linalg.inv(M_homog)
     # Refined via homography of all valid points
     unwarped_ideal_chess_corners = cv2.perspectiveTransform(
-        np.expand_dims(ideal_grid_pts.astype(float),0), M_ideal_to_real)[0,:,:]
+        np.expand_dims(ideal_grid_pts,0), M_ideal_to_real)[0,:,:]
 
     # Before offset
     # cv2.polylines(frame, 
-    #   [unwarped_ideal_chess_corners.astype(np.int32)], 
+    #   [np.round(unwarped_ideal_chess_corners).astype(np.int32)], 
     #   isClosed=True, thickness=0, color=(0,0,55))
 
     # Get a rectified chessboard image
@@ -243,33 +241,46 @@ def processFrame(frame, gray, predict_fn):
 
     tile_size = 32
     warpFrameQuad = np.array([[0,1],[1,1],[1,0],[0,0]],dtype=np.float32)
-    warpFrameQuad = (warpFrameQuad*(8)+2)*tile_size
+    buffer_tiles = 2
+    tiles_plus_buffer = 8+buffer_tiles*2
+    warpFrameQuad = (warpFrameQuad*(8)+buffer_tiles)*tile_size
     warpM = cv2.getPerspectiveTransform(aligned_chess_corners.astype(np.float32), warpFrameQuad)
 
-    warp_frame_gray = cv2.warpPerspective(gray, warpM, (tile_size*12,tile_size*12))
+    warp_frame_gray = cv2.warpPerspective(gray, warpM, 
+      (tile_size*(tiles_plus_buffer),tile_size*(tiles_plus_buffer)))
 
 
     # Rectify grayscale chessboard image and find best offset for where chessboard really is
     # This undos potential off-by-[1,2] errors from propogated Classify/LK mistakes.
-    best_offset, tilesum = findBestBoardViaTiles(warp_frame_gray)
-    best_offset = (best_offset[0]-2, best_offset[1]-2) # Center on 1
-    # best_offset = (0,0)
-    # print(best_offset)
+    DO_BOARD_REALIGN = True
+    # DO_BOARD_REALIGN = False
+    if DO_BOARD_REALIGN:
+      best_offset, tilesum, best_score = findBestBoardViaTiles(warp_frame_gray)
+      best_offset = (best_offset[0]-buffer_tiles, best_offset[1]-buffer_tiles) # Center on 1
+      # if best_offset[0] != 0 and best_offset[1] != 0:
+      #   best_offset = (0,0)
+      # print(best_offset)
+      # print(best_score)
+      # if best_score < 5000:
+      #   best_offset = (0,0)  
+    else:
+      tilesum = None
+      best_offset = (0,0) # For testing without affecting results.
 
     # Rebuild ideal grid points with offset
     ideal_grid_pts -= best_offset
     all_ideal_grid_pts -= best_offset
 
     unwarped_ideal_chess_corners = cv2.perspectiveTransform(
-        np.expand_dims(ideal_grid_pts.astype(float),0), M_ideal_to_real)[0,:,:]
+        np.expand_dims(ideal_grid_pts,0), M_ideal_to_real)[0,:,:]
     aligned_chess_corners = getAlignedChessCorners(unwarped_ideal_chess_corners[:4,:])
 
     unwarped_all_chesspts = cv2.perspectiveTransform(
-        np.expand_dims(all_ideal_grid_pts.astype(float),0), M_ideal_to_real)[0,:,:]
+        np.expand_dims(all_ideal_grid_pts,0), M_ideal_to_real)[0,:,:]
     warpM = cv2.getPerspectiveTransform(aligned_chess_corners.astype(np.float32), warpFrameQuad)
 
     cv2.polylines(frame, 
-      [unwarped_ideal_chess_corners.astype(np.int32)], 
+      [np.round(unwarped_ideal_chess_corners).astype(np.int32)], 
       isClosed=True, thickness=4, color=(0,0,255))
 
     # Keep only points that are classified as chess corner points
@@ -289,10 +300,15 @@ def processFrame(frame, gray, predict_fn):
     #   [unwarped_all_chesspts.astype(np.int32)], 
     #   isClosed=False, thickness=1, color=(0,255,255))
 
-    processFrame.prevBoardpts = validChessPoints
+    if best_offset[0] == 0 and best_offset[1] == 0:
+      processFrame.prevBoardpts = validChessPoints
+    else:
+      processFrame.prevBoardpts = None
+
     processFrame.prevGray = gray.copy()
 
-    warpFrame = cv2.warpPerspective(frame_orig, warpM, (tile_size*12,tile_size*12))
+    warpFrame = cv2.warpPerspective(frame_orig, warpM, 
+      (tile_size*tiles_plus_buffer,tile_size*tiles_plus_buffer))
 
     # idealQuad = np.array([[0,1],[1,1],[1,0],[0,0]],dtype=np.float32)
     # actual_chessboard_corners = cv2.perspectiveTransform(
@@ -329,33 +345,84 @@ def meanpool(a, shape):
 
 @Brutesac.timed
 def findBestBoardViaTiles(warp_frame_img_gray, tile_px=32):
+  # TODO : Consider using standard deviation of color or something instead.
+
   # In the range 0 to 1024 (from 32*32 = 1024 when downscaling by 32)
   # tilesum = medianpool(warp_frame_img_gray.astype(np.int64), 
   #   np.array(warp_frame_img_gray.shape)/tile_px)-512
-  tilesum = meanpool(warp_frame_img_gray.astype(np.int64), 
-    np.array(warp_frame_img_gray.shape)/tile_px)-128
+  special_gray = warp_frame_img_gray.astype(np.int64)
+  special_gray[special_gray==0] = 127 # Make out-of-borders average zero mean.
+  # special_gray = special_gray - np.median(special_gray) # semi-normalize
+  clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+  special_gray = clahe.apply(special_gray.astype(np.uint8)).astype(np.int64) - 127
 
-  # Now try 8x8 subsquares of this 12x12 array and take the 
-  # difference between the sum of white and sum of black tiles (abs)
-  # and use that as a score.
-  # same_color_tile_mask = np.tile(np.eye(2,dtype=bool),[4,4])
-  same_color_tile_mask = np.tile(np.eye(2,dtype=np.int64),[4,4])*2-1 # -1 and 1
+  tilesum = meanpool(special_gray, 
+    np.array(special_gray.shape)/tile_px)
 
-  # TODO : Add bright boundary around chessboard, since most tend to have a light space there.
+  n_max = tilesum.shape[0]
 
-  best_score = 0
-  best_idx = (-1,-1)
-  for i in range(5):
-    for j in range(5):
-      # sA = np.sum(tilesum[i:i+8,j:j+8][same_color_tile_mask])
-      # sB = np.sum(tilesum[i:i+8,j:j+8][~same_color_tile_mask])
-      # score = np.abs(sA-sB)
-      score = np.sum((same_color_tile_mask*tilesum[i:i+8,j:j+8]))**2
-      if score > best_score:
-        best_score = score
-        best_idx = (j, i)
 
-  return best_idx, tilesum
+  if False:
+    # New idea, take every other tile and sum the diffs of
+    # it to it's one on the right and it to the one below.
+    tile_mask = np.tile(np.eye(2,dtype=bool),[4,4])
+
+    best_score = 0
+    best_idx = (-1,-1)
+    for y in range(n_max-8+1):
+      for x in range(n_max-8+1):
+        subtile = tilesum[x:x+8, y:y+8]
+        # Abs diff between tile and one to it's right
+        sA = subtile[1:,:][tile_mask[:7,:]] - subtile[:7,:][tile_mask[:7,:]]
+        # Abs diff between tile and one below
+        sB = subtile[:,1:][tile_mask[:,:7]] - subtile[:,:7][tile_mask[:,:7]]
+        score = np.sum(np.abs(sA) + np.abs(sB))
+
+        if score > best_score:
+          best_score = score
+          best_idx = (x, y) # return in x,y coordinate system
+
+  else:
+    #### Old
+    # Now try 8x8 subsquares of this 12x12 array and take the 
+    # difference between the sum of white and sum of black tiles (abs)
+    # and use that as a score.
+    # same_color_tile_mask = np.tile(np.eye(2,dtype=bool),[4,4])
+    filterA = np.tile(np.eye(2,dtype=np.int64),[4,4])*2-1 # -1 and 1
+    # TODO : Add bright boundary around chessboard, since most tend to have a light space there.
+    tbuff = 0
+    filterA = np.pad(filterA, tbuff, 'constant', constant_values=1)
+    # import scipy
+    # filterA = scipy.ndimage.filters.gaussian_filter((filterA).astype(np.float64), sigma=10, mode='constant')
+    # print(filterA)
+    filterB = np.rot90(filterA) # inverse tile order
+    # score_array = np.zeros([n_max-8-2*tbuff+1,n_max-8-2*tbuff+1])
+
+    best_score = 0
+    best_idx = (-1,-1)
+    for i in range(tbuff,n_max-8-tbuff+1):
+      for j in range(tbuff,n_max-8-tbuff+1):
+        # sA = np.sum(tilesum[i:i+8,j:j+8][same_color_tile_mask])
+        # sB = np.sum(tilesum[i:i+8,j:j+8][~same_color_tile_mask])
+        # score = np.abs(sA-sB)
+        subtile = tilesum[
+          i-tbuff:i+8+tbuff, 
+          j-tbuff:j+8+tbuff]
+        scoreA = np.sum(filterA*subtile)**2
+        scoreB = np.sum(filterB*subtile)**2
+        score = max(scoreA, scoreB)
+        # score_array[i-1,j-1] = score
+        if score > best_score:
+          best_score = score
+          best_idx = (i, j) # return in x,y coordinate system
+
+
+  tilesum[:best_idx[1],:best_idx[0]] = 127
+  # print(best_score)
+
+  # score_array = (score_array * 255) / score_array.max()
+
+  return best_idx, tilesum, best_score
 
 def getAlignedChessCorners(unaligned_corners):
   # Rotate corners until first point is closest to the top-left of the image and return.
@@ -433,7 +500,8 @@ def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='
         cv2.imshow('warpFrame',warpFrame)
       if tilesum is not None:
         # cv2.imshow('tilesum',tilesum/4)
-        cv2.imshow('tilemedian',(tilesum+128).astype(np.uint8))
+        cv2.imshow('tilemedian',np.clip((tilesum+128), 0, 255).astype(np.uint8))
+        # cv2.imshow('tilemedian',(tilesum).astype(np.int64))
 
     if SAVE_FRAME:
       output_orig_filepath = '%s/frame_%03d.jpg' % (output_folder, i)

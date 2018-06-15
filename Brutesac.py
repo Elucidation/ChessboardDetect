@@ -193,7 +193,7 @@ def getTilesFromImage(pts, img_gray, WINSIZE=10):
   # Build tiles
   img_shape = np.array([img_gray.shape[1], img_gray.shape[0]])
   tiles = np.zeros([len(pts), WINSIZE*2+1, WINSIZE*2+1])
-  for i, pt in enumerate(pts):
+  for i, pt in enumerate(np.round(pts).astype(np.int64)):
     tiles[i,:,:] = img_gray[pt[1]-WINSIZE:pt[1]+WINSIZE+1, pt[0]-WINSIZE:pt[0]+WINSIZE+1]
 
   return tiles

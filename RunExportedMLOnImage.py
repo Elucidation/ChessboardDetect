@@ -47,18 +47,19 @@ def getSaddle(gray_img):
     gyy = cv2.Sobel(gy,cv2.CV_32F,0,1)
     gxy = cv2.Sobel(gx,cv2.CV_32F,0,1)
     
+    # Inverse everything so positive equals more likely.
     S = -gxx*gyy + gxy**2
-    return S
+
+    # Calculate subpixel offsets
+    denom = (gxx*gyy - gxy*gxy)
+    sub_s = (gy*gxy - gx*gyy) / denom
+    sub_t = (gx*gxy - gy*gxx) / denom
+    return S, sub_s, sub_t
 
 def fast_nonmax_sup(img, win=11):
   element = np.ones([win, win], np.uint8)
   img_dilate = cv2.dilate(img, element)
   peaks = cv2.compare(img, img_dilate, cv2.CMP_EQ)
-  # nonzeroImg = cv2.compare(img, 0, cv2.CMP_NE)
-  # peaks = cv2.bitwise_and(peaks, nonzeroImg)
-  # peaks[img == 0] = 0
-  # notPeaks = cv2.bitwise_not(peaks)
-
   img[peaks == 0] = 0
 
 
@@ -106,11 +107,14 @@ def loadImage(filepath):
 
 @timed
 def getFinalSaddlePoints(img, WINSIZE=10): # 32ms -> 15ms
-  # img = cv2.blur(img, (3,3)) # Blur it (.5ms)
-  saddle = getSaddle(img) # 6ms
+  img = cv2.blur(img, (3,3)) # Blur it (.5ms)
+  saddle, sub_s, sub_t = getSaddle(img) # 6ms
   fast_nonmax_sup(saddle) # ~6ms
   saddle[saddle<10000]=0 # Hardcoded ~1ms
-  spts = np.argwhere(saddle)[:,[1,0]] # Return in x,y order instead or row-col
+  sub_idxs = np.nonzero(saddle)
+  idxs = np.argwhere(saddle).astype(np.float64)
+  spts = idxs[:,[1,0]] # Return in x,y order instead or row-col
+  spts = spts + np.array([sub_s[sub_idxs], sub_t[sub_idxs]]).transpose()
   # Remove those points near win_size edges
   spts = clipBoundingPoints(spts, img.shape, WINSIZE)
   return spts # returns in x,y column order
@@ -160,210 +164,70 @@ def findQuadSimplices(tri, dists, simplices_mask=None):
                 good_neighbors.extend([i,j])
     return good_neighbors
 
-def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
-  # vidstream = skvideo.io.vread('VID_20170427_003836.mp4')
-  # vidstream = skvideo.io.vread('VID_20170109_183657.mp4')
-  print("Loading video %s" % filename)
-  # vidstream = skvideo.io.vread('output2.avi')
-  vidstream = skvideo.io.vread(filename)#, num_frames=1000)
-  # vidstream = skvideo.io.vread('output.avi')
-  print("Finished loading")
-  # vidstream = skvideo.io.vread(0)
-  print(vidstream.shape)
+# def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
+#   # vidstream = skvideo.io.vread('VID_20170427_003836.mp4')
+#   # vidstream = skvideo.io.vread('VID_20170109_183657.mp4')
+#   print("Loading video %s" % filename)
+#   # vidstream = skvideo.io.vread('output2.avi')
+#   vidstream = skvideo.io.vread(filename)#, num_frames=1000)
+#   # vidstream = skvideo.io.vread('output.avi')
+#   print("Finished loading")
+#   # vidstream = skvideo.io.vread(0)
+#   print(vidstream.shape)
 
-  # ffmpeg -i vidstream_frames/ml_frame_%03d.jpg -c:v libx264 -vf "fps=25,format=yuv420p"  test.avi -y
+#   # ffmpeg -i vidstream_frames/ml_frame_%03d.jpg -c:v libx264 -vf "fps=25,format=yuv420p"  test.avi -y
 
-  output_folder = "%s_vidstream_frames" % (filename[:-4])
-  if not os.path.exists(output_folder):
-    os.mkdir(output_folder)
-
-
-  for i, frame in enumerate(vidstream):
-    print("Frame %d" % i)
-    # frame = cv2.resize(frame, (320,240), interpolation = cv2.INTER_CUBIC)
-
-    # Our operations on the frame come here
-    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    inlier_pts, outlier_pts, pred_pts, final_predictions, prediction_levels, tri, simplices_mask = processImage(gray)
+#   output_folder = "%s_vidstream_frames" % (filename[:-4])
+#   if not os.path.exists(output_folder):
+#     os.mkdir(output_folder)
 
 
-    for pt in inlier_pts:
-      cv2.circle(frame, tuple(pt[::-1]), 3, (0,255,0), -1)
+#   for i, frame in enumerate(vidstream):
+#     print("Frame %d" % i)
+#     # frame = cv2.resize(frame, (320,240), interpolation = cv2.INTER_CUBIC)
 
-    for pt in outlier_pts:
-      cv2.circle(frame, tuple(pt[::-1]), 1, (0,0,255), -1)
+#     # Our operations on the frame come here
+#     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+#     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    # Draw triangle mesh
-    if tri is not None:
-      cv2.polylines(frame,
-        np.flip(inlier_pts[tri.simplices].astype(np.int32), axis=2),
-        isClosed=True, color=(255,0,0))
-      cv2.polylines(frame,
-        np.flip(inlier_pts[tri.simplices[simplices_mask]].astype(np.int32), axis=2),
-        isClosed=True, color=(0,255,0), thickness=3)
-
-    cv2.putText(frame, 'Frame %d' % i, (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0,cv2.LINE_AA)
-
-    # Display the resulting frame
-    cv2.imshow('frame',frame)
-    output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
-    if SAVE_FRAME:
-      cv2.imwrite(output_filepath, frame)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-  # When everything done, release the capture
-  cv2.destroyAllWindows()
-
-def calculateOutliers(pts, threshold_mult = 2.5):
-  N = len(pts)
-  std = np.std(pts, axis=0)
-  ctr = np.mean(pts, axis=0)
-  return (np.any(np.abs(pts-ctr) > threshold_mult * std, axis=1))
-
-# TODO: remove deprecated
-def processImage(img_gray, predict_fn):
-  print("Processing.")
-  a_start = time.time()
-  spts = getFinalSaddlePoints(img_gray)
-  b = time.time()
-  t_saddle = (b-a_start)
-  WINSIZE = 10
-
-  tiles = []
-  pred_pts = []
-  for pt in spts:
-    # Build tiles
-    if (np.any(pt <= WINSIZE) or np.any(pt >= np.array(img_gray.shape[:2]) - WINSIZE)):
-      continue
-    else:
-      tile = img_gray[pt[1]-WINSIZE:pt[1]+WINSIZE+1, pt[0]-WINSIZE:pt[0]+WINSIZE+1]
-      tiles.append(tile)
-      pred_pts.append(pt)
-
-  if tiles == []:
-    return [None]*7
-
-  tiles = np.array(tiles, dtype=np.uint8)
-
-  a = time.time()
-  predictions = predict_fn(
-    {"x": tiles})
-
-  # print(predictions)
-  # raise('Error')
-
-  good_pts = []
-  bad_pts = []
-  final_predictions = []
-  prediction_levels = []
-  # for i, prediction in enumerate(predictions['probabilities']):
-    # c = prediction.argmax()
-  for i, prediction in enumerate(predictions['class_ids']):
-    c = prediction[0]
-    pt = pred_pts[i]
-    final_predictions.append(c)
-    # prediction_levels.append(prediction[1])
-    prediction_levels.append(c)
-  b = time.time()
-  t_pred = b-a
-
-  ml_pts = np.array(pred_pts)[np.array(prediction_levels)>0.5,:]
-  bad_pts_mask = calculateOutliers(ml_pts)
-  # Inliers
-  inlier_pts = ml_pts[~bad_pts_mask,:]
-  outlier_pts = ml_pts[bad_pts_mask,:]
-
-  if (len(inlier_pts) >= 4):
-    tri = Delaunay(inlier_pts)
-    dists, good_simplices_mask = removeOutlierSimplices(tri)
-    good_neighbors = findQuadSimplices(tri, dists, good_simplices_mask)
-    simplices_mask = good_simplices_mask
-    # simplices_mask = np.zeros(tri.nsimplex, dtype=bool)
-    # simplices_mask[good_neighbors] = True
-  else:
-    tri = None
-    simplices_mask = None
-
-  b_end = time.time()
-  t_total = b_end-a_start
-  print(" - Total %.2f ms, Saddle took %.2f ms (%d pts), Predict took %.2f ms" % (t_total*1e3, t_saddle*1e3, len(spts), t_pred*1e3)) # ~2-3ms
-
-  return inlier_pts, outlier_pts, pred_pts, final_predictions, prediction_levels, tri, simplices_mask
+#     inlier_pts, outlier_pts, pred_pts, final_predictions, prediction_levels, tri, simplices_mask = processImage(gray)
 
 
+#     for pt in inlier_pts:
+#       cv2.circle(frame, tuple(pt[::-1]), 3, (0,255,0), -1)
 
-# TODO: remove deprecated
-def main(SAVE_FRAME=False):
-  # filenames = glob.glob('input_bad/*')
-  filenames = glob.glob('input/img_*')
-  filenames.extend(glob.glob('input_yt/*.jpg'))
-  # filenames = (glob.glob('input_yt/*.jpg'))
-  filenames = sorted(filenames)
-  n = len(filenames)
-  # n = 5
+#     for pt in outlier_pts:
+#       cv2.circle(frame, tuple(pt[::-1]), 1, (0,0,255), -1)
 
-  predict_fn = getModel()
+#     # Draw triangle mesh
+#     if tri is not None:
+#       cv2.polylines(frame,
+#         np.flip(inlier_pts[tri.simplices].astype(np.int32), axis=2),
+#         isClosed=True, color=(255,0,0))
+#       cv2.polylines(frame,
+#         np.flip(inlier_pts[tri.simplices[simplices_mask]].astype(np.int32), axis=2),
+#         isClosed=True, color=(0,255,0), thickness=3)
 
-  WINSIZE = 5
+#     cv2.putText(frame, 'Frame %d' % i, (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0,cv2.LINE_AA)
 
-  output_folder = 'ml_images'
-  if not os.path.exists(output_folder):
-    os.mkdir(output_folder)
+#     # Display the resulting frame
+#     cv2.imshow('frame',frame)
+#     output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
+#     if SAVE_FRAME:
+#       cv2.imwrite(output_filepath, frame)
 
-  for i in range(n):
-    filename = filenames[i]
-    print ("Processing %d/%d : %s" % (i+1,n,filename))
-    img, img_gray = loadImage(filename)
-    inlier_pts, outlier_pts, pred_pts, final_predictions, prediction_levels, tri, simplices_mask = processImage(img_gray, predict_fn)
+#     if cv2.waitKey(1) & 0xFF == ord('q'):
+#         break
 
-    b,g,r = cv2.split(img)       # get b,g,r
-    rgb_img = cv2.merge([r,g,b])     # switch it to rgb
-    for pt in inlier_pts:
-      # Good
-      cv2.circle(rgb_img, tuple(pt[::-1]), 4, (0,255,0), -1)
-    for pt in outlier_pts:
-      cv2.circle(rgb_img, tuple(pt[::-1]), 3, (0,0,255), -1)
+#   # When everything done, release the capture
+#   cv2.destroyAllWindows()
 
-    # Draw triangle mesh
-    if tri is not None:
-      cv2.polylines(rgb_img,
-        np.flip(inlier_pts[tri.simplices].astype(np.int32), axis=2),
-        isClosed=True, color=(255,0,0))
-      cv2.polylines(rgb_img,
-        np.flip(inlier_pts[tri.simplices[simplices_mask]].astype(np.int32), axis=2),
-        isClosed=True, color=(0,255,0), thickness=3)
+# def calculateOutliers(pts, threshold_mult = 2.5):
+#   N = len(pts)
+#   std = np.std(pts, axis=0)
+#   ctr = np.mean(pts, axis=0)
+#   return (np.any(np.abs(pts-ctr) > threshold_mult * std, axis=1))
 
-    cv2.imshow('frame',rgb_img)
-
-    output_filepath = '%s/%s_ml.png' % (output_folder,filename[:-3])
-    if SAVE_FRAME:
-      if not os.path.exists(os.path.dirname(output_filepath)):
-        os.makedirs(os.path.dirname(output_filepath))
-      print("Saving %s" % output_filepath)
-      cv2.imwrite(output_filepath, rgb_img)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-      break
-
-  print('Finished')
-
-
-
-if __name__ == '__main__':
-  # main(True)
-  # filename = 'carlsen_match.mp4'
-  # filename = 'carlsen_match2.mp4'
-  filename = 'output.avi'
-  # filename = 'output2.avi'
-  # filename = 'random1.mp4'
-  # filename = 'speedchess1.mp4'
-  # filename = 'match1.mp4'
-  # filename = 'match2.mp4'
-  videostream(filename, True)
 
 
 

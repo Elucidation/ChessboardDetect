@@ -21,7 +21,7 @@ def classifyFrame(gray, predict_fn, WINSIZE=10):
   # Saddle points classified as Chessboard X-corners
   probabilities = Brutesac.predictOnImage(spts, gray, predict_fn, WINSIZE=WINSIZE)
 
-  return np.array(spts), np.array(probabilities)
+  return spts, probabilities
 
 @Brutesac.timed
 def processFrame(frame, gray, predict_fn, probability_threshold=0.9,WINSIZE=10):
@@ -36,11 +36,11 @@ def processFrame(frame, gray, predict_fn, probability_threshold=0.9,WINSIZE=10):
   not_xpts = spts[probabilities <= probability_threshold,:]
 
   # Draw xcorner points
-  for pt in xpts.astype(np.int64):
+  for pt in np.round(xpts).astype(np.int64):
     cv2.rectangle(overlay_frame, tuple(pt-2),tuple(pt+2), (0,255,0), -1)
 
   # Draw rejects
-  for pt in not_xpts.astype(np.int64):
+  for pt in np.round(not_xpts).astype(np.int64):
     cv2.rectangle(overlay_frame, tuple(pt-0),tuple(pt+0), (0,0,255), -1)
 
   return overlay_frame, spts, probabilities
