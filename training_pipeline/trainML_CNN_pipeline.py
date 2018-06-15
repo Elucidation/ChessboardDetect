@@ -33,8 +33,7 @@ def main(args):
   print("Loaded train dataset '%s' : %d entries (%d good, %d bad)" % (train_folders, train_dataset_length, n_train_good, train_dataset_length - n_train_good ))
 
   # Build model.
-  feature_img = tf.feature_column.numeric_column("x", shape=[21,21], dtype=tf.uint8)
-  model_dir = './training_models/cnn_adam_%s_dataset_%d' % (args.run_name, train_dataset_length)
+  model_dir = './training_models/cnn_%s_n%d' % (args.run_name, train_dataset_length)
 
   estimator = tf.estimator.Estimator(model_fn=cnn_model_fn, model_dir=model_dir,
     params={

@@ -10,7 +10,7 @@ import RunExportedMLOnImage
 from functools import wraps
 import time
 from scipy.spatial import ConvexHull
-
+from scipy.spatial import cKDTree
 
 # Parameters for lucas kanade optical flow
 lk_params = dict( winSize  = (15,15),
@@ -40,20 +40,28 @@ def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsFor
       spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
       # Returns in x,y column order
 
-      # spts = spts[:,[1,0]]
-      newpts = []
-      for i, pt in enumerate(pts):
-        d = np.sum((spts - pt)**2, axis=1)
-        best_spt_idx = d.argmin()
-        if d[best_spt_idx] > 1 and d[best_spt_idx] < 3**2:
-          newpts.append(spts[best_spt_idx,:])
-        elif d[best_spt_idx] < 10**2:
-          newpts.append(pt)
-      if not newpts:
-        # Empty array
-        pts = np.zeros([0,2])
-      else:
-        pts = np.array(newpts)
+      min_dists, min_dist_idx = cKDTree(spts).query(pts, 1)
+      
+      keep_mask = min_dists < 3**2
+      replace_mask = np.logical_and(min_dists > 1, min_dists < 3**2)
+
+      pts[replace_mask,:] = spts[min_dist_idx[replace_mask],:]
+      pts = pts[keep_mask,:]
+
+      # pts[] = spts[min_dist_idx,:][min_dists < 3**2 and min_dists > 1,:]
+      # newpts = []
+      # for i, pt in enumerate(pts):
+      #   d = np.sum((spts - pt)**2, axis=1)
+      #   best_spt_idx = d.argmin()
+      #   if d[best_spt_idx] > 1 and d[best_spt_idx] < 3**2:
+      #     newpts.append(spts[best_spt_idx,:])
+      #   elif d[best_spt_idx] < 10**2:
+      #     newpts.append(pt)
+      # if not newpts:
+      #   # Empty array
+      #   pts = np.zeros([0,2])
+      # else:
+      #   pts = np.array(newpts)
 
       print("LK")
   
@@ -203,12 +211,12 @@ def processFrame(frame, gray, predict_fn):
     M_homog = None
 
   # Draw tiles found
-  cv2.drawContours(frame,contours,-1,(0,255,255),2)
+  cv2.drawContours(frame,contours,-1,(0,255,0),1)
 
   # Draw xcorner points
   for pt in pts.astype(np.int64):
     # cv2.circle(frame, tuple(pt), 3, (0,0,255), -1)
-    cv2.rectangle(frame, tuple(pt-1),tuple(pt+1), (0,255,255), -1)
+    cv2.rectangle(frame, tuple(pt-1),tuple(pt+1), (0,0,255), -1)
 
 
   ideal_grid_pts = np.vstack([np.array([0,0,1,1,0])*8-1, np.array([0,1,1,0,0])*8-1]).T
@@ -240,7 +248,7 @@ def processFrame(frame, gray, predict_fn):
 
     # Rectify grayscale chessboard image and find best offset for where chessboard really is
     # This undos potential off-by-[1,2] errors from propogated Classify/LK mistakes.
-    best_offset, _ = findBestBoardViaTiles(warp_frame_gray)
+    best_offset, tilesum = findBestBoardViaTiles(warp_frame_gray)
     best_offset = (best_offset[0]-2, best_offset[1]-2) # Center on 1
     # best_offset = (0,0)
     # print(best_offset)
@@ -294,8 +302,9 @@ def processFrame(frame, gray, predict_fn):
     processFrame.prevGray = None
     warpFrame = None
     aligned_chess_corners = None
+    tilesum = None
 
-  return frame, warpFrame, aligned_chess_corners
+  return frame, warpFrame, aligned_chess_corners, tilesum
 
 processFrame.prevBoardpts = None
 processFrame.prevGray = None
@@ -380,21 +389,18 @@ def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='
     print("Frame %d" % i)
     # if (i%5!=0):
     #   continue
-    # if frame.shape[1] > 960:
-    #   frame = cv2.resize(frame, (960, 720), interpolation = cv2.INTER_CUBIC)
-    frame = cv2.resize(frame, (480, 360), interpolation = cv2.INTER_CUBIC)
+    if frame.shape[1] > 640:
+      frame = cv2.resize(frame, (640, 480), interpolation = cv2.INTER_CUBIC)
+      # frame = cv2.resize(frame, (960, 720), interpolation = cv2.INTER_CUBIC)
+    # frame = cv2.resize(frame, (480, 360), interpolation = cv2.INTER_CUBIC)
 
 
     # Our operations on the frame come here
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    # if i == 63:
-    #   cv2.imwrite('weird.png', frame)
-    #   break;
-
     a = time.time()
-    overlay_frame, warpFrame, chessboard_corners = processFrame(frame.copy(), gray, predict_fn)
+    overlay_frame, warpFrame, chessboard_corners, tilesum = processFrame(frame.copy(), gray, predict_fn)
     t_proc = time.time() - a
 
     # Add frame counter
@@ -405,8 +411,8 @@ def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='
       cv2.imshow('overlayFrame',overlay_frame)
       if warpFrame is not None:
         cv2.imshow('warpFrame',warpFrame)
-    
-
+      if tilesum is not None:
+        cv2.imshow('tilesum',tilesum/8)
 
     if SAVE_FRAME:
       output_orig_filepath = '%s/frame_%03d.jpg' % (output_folder, i)
@@ -467,6 +473,8 @@ if __name__ == '__main__':
                       help="Path to exported model to use.")
   parser.add_argument("video_inputs", nargs='+',
                       help="filepaths to videos to process")
+  parser.add_argument("-save_frame",
+                      action='store_true', help="Save output frames")
   args = parser.parse_args()
   print("Arguments passed: \n\t%s\n" % args)
   # main()
@@ -501,4 +509,4 @@ if __name__ == '__main__':
       predict_fn = RunExportedMLOnImage.getModel(args.model)
     else:
       predict_fn = RunExportedMLOnImage.getModel()
-    videostream(predict_fn, fullpath, output_folder_prefix, False, MAX_FRAME=1000, DO_VISUALS=True)
+    videostream(predict_fn, fullpath, output_folder_prefix, args.save_frame, MAX_FRAME=1000, DO_VISUALS=True)
