@@ -19,16 +19,15 @@ def classifyFrame(gray, predict_fn, WINSIZE=10):
   spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
 
   # Saddle points classified as Chessboard X-corners
-  probabilities = Brutesac.predictOnImage(spts, gray, predict_fn)
-  # probabilities = np.ones(len(spts))
+  probabilities = Brutesac.predictOnImage(spts, gray, predict_fn, WINSIZE=WINSIZE)
 
   return np.array(spts), np.array(probabilities)
 
 @Brutesac.timed
-def processFrame(frame, gray, predict_fn, probability_threshold=0.9):
+def processFrame(frame, gray, predict_fn, probability_threshold=0.9,WINSIZE=10):
   overlay_frame = frame.copy()
   # Overlay good and bad points onto the frame
-  spts, probabilities = classifyFrame(gray, predict_fn)
+  spts, probabilities = classifyFrame(gray, predict_fn, WINSIZE=WINSIZE)
 
   # 10ms for the rest of this
 
@@ -84,7 +83,7 @@ def videostream(predict_fn, filepath='carlsen_match.mp4',
 
 
     a = time.time()
-    overlay_frame, spts, probabilities = processFrame(frame, gray, predict_fn)
+    overlay_frame, spts, probabilities = processFrame(frame, gray, predict_fn, WINSIZE=7)
     t_proc = time.time() - a
 
     # Add frame counter

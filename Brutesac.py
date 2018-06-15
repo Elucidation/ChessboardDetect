@@ -178,7 +178,7 @@ def predictOnTiles(tiles, predict_fn):
 @timed
 def predictOnImage(pts, img_gray, predict_fn, WINSIZE = 10):
   # Build tiles to run classifier on. (23 ms)
-  tiles = getTilesFromImage(pts, img_gray, WINSIZE=10)
+  tiles = getTilesFromImage(pts, img_gray, WINSIZE=WINSIZE)
 
   # Classify tiles. (~137ms)
   probs = predictOnTiles(tiles, predict_fn)
@@ -200,7 +200,7 @@ def getTilesFromImage(pts, img_gray, WINSIZE=10):
 
 @timed
 def classifyPoints(pts, img_gray, predict_fn, WINSIZE = 10):
-  tiles = getTilesFromImage(pts, img_gray)
+  tiles = getTilesFromImage(pts, img_gray, WINSIZE=WINSIZE)
 
   # Classify tiles.
   probs = predictOnTiles(tiles, predict_fn)

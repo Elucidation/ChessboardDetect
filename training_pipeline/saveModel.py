@@ -21,7 +21,7 @@ def main(args):
     })
 
     # Build input function.
-    image = tf.placeholder(tf.uint8, [None, 21, 21])
+    image = tf.placeholder(tf.uint8, [None, 15, 15])
     input_fn = tf.estimator.export.build_raw_serving_input_receiver_fn({
       'x': image,
     })

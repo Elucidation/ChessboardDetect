@@ -66,9 +66,9 @@ def randomize_image(img, contrast_range=[0.2,1.8], brightness_max=0.5):
   # Apply random flips/rotations and contrast/brightness changes to image
   img = tf.image.random_flip_left_right(img)
   img = tf.image.random_flip_up_down(img)
-  img = tf.image.rot90(img, k=np.random.randint(4))
   img = tf.image.random_contrast(img, lower=contrast_range[0], upper=contrast_range[1])
   img = tf.image.random_brightness(img, max_delta=brightness_max)
+  img = tf.contrib.image.rotate(img, tf.random_uniform([1], minval=-np.pi, maxval=np.pi))
   return img
 
 def preprocessor(dataset, batch_size, dataset_length=None, is_training=False):
@@ -87,6 +87,9 @@ def preprocessor(dataset, batch_size, dataset_length=None, is_training=False):
   # TODO : Check if this needs to be applied to the predict function also
   # TODO : Does this cancel out random_brightness?
   # dataset = dataset.map(lambda img, label: (tf.image.per_image_standardization(img), label))
+  
+  # Bring down to 15x15 from 21x21
+  dataset = dataset.map(lambda img, label: (tf.image.central_crop(img, 0.666666), label))
 
   # Batch and repeat.
   dataset = dataset.batch(batch_size)

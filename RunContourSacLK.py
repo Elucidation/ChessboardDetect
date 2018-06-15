@@ -18,9 +18,14 @@ lk_params = dict( winSize  = (15,15),
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
 @Brutesac.timed
-def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsForLK=10, WINSIZE=10):
+def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsForLK=10, WINSIZE=10, probability_threshold=0.8):
   # and return M for chessboard from image
-  # old_pts = None
+
+  # TODO: pass region mask to classifyImage to only search in a region
+
+  spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
+
+  # old_pts = None # For testing classify only without LK.
   if old_pts is not None:
     # calculate optical flow
     pts, st, err = cv2.calcOpticalFlowPyrLK(old_gray, gray, old_pts.astype(np.float32), None, **lk_params)
@@ -36,51 +41,48 @@ def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsFor
 
     pts = pts[valid,:]
     if len(pts) > minPointsForLK:
-      # Update the valid points to the closest saddle point if possible
-      spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
-      # Returns in x,y column order
+      # Calculate x-pts for the current image
+      # xpts = Brutesac.classifyImage(gray, predict_fn, WINSIZE=WINSIZE)
+      probabilities = Brutesac.predictOnImage(spts, gray, predict_fn, WINSIZE=WINSIZE)
+      xpts = spts[probabilities > probability_threshold,:]
 
-      min_dists, min_dist_idx = cKDTree(spts).query(pts, 1)
+      # Find closest xpts
+      min_dists, min_dist_idx = cKDTree(xpts).query(pts, 1)
       
-      keep_mask = min_dists < 3**2
-      replace_mask = np.logical_and(min_dists > 1, min_dists < 3**2)
+      keep_mask = min_dists < 4
+      replace_mask = np.logical_and(min_dists > 1, min_dists < 4)
 
-      pts[replace_mask,:] = spts[min_dist_idx[replace_mask],:]
+      # Update those xpts that are within the right range and throw out those
+      # too far away
+      pts[replace_mask,:] = xpts[min_dist_idx[replace_mask],:]
       pts = pts[keep_mask,:]
 
-      # pts[] = spts[min_dist_idx,:][min_dists < 3**2 and min_dists > 1,:]
-      # newpts = []
-      # for i, pt in enumerate(pts):
-      #   d = np.sum((spts - pt)**2, axis=1)
-      #   best_spt_idx = d.argmin()
-      #   if d[best_spt_idx] > 1 and d[best_spt_idx] < 3**2:
-      #     newpts.append(spts[best_spt_idx,:])
-      #   elif d[best_spt_idx] < 10**2:
-      #     newpts.append(pt)
-      # if not newpts:
-      #   # Empty array
-      #   pts = np.zeros([0,2])
-      # else:
-      #   pts = np.array(newpts)
+      # Update the valid points to the closest saddle point if possible
+      # spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
+      # # Returns in x,y column order
 
+      # min_dists, min_dist_idx = cKDTree(spts).query(pts, 1)
+      
+      # keep_mask = min_dists < 3**2
+      # replace_mask = np.logical_and(min_dists > 1, min_dists < 3**2)
+
+      # pts[replace_mask,:] = spts[min_dist_idx[replace_mask],:]
+      # pts = pts[keep_mask,:]
       print("LK")
-  
-  if old_pts is None or pts.shape[0] < minPointsForLK:
-    pts = Brutesac.classifyImage(gray, predict_fn)
+  else:
+  # if old_pts is None or pts.shape[0] < minPointsForLK:
+    # pts = Brutesac.classifyImage(gray, predict_fn, WINSIZE=WINSIZE)
+    probabilities = Brutesac.predictOnImage(spts, gray, predict_fn, WINSIZE=WINSIZE)
+    pts = spts[probabilities > probability_threshold,:]
     if len(pts) == 0:
       return pts, []
     print("CLASSIFY %d pts" % len(pts))
 
-  # Get contours
+  # Get contours.
   contours, hierarchy = getContours(gray, pts)
-
-  # xcorner_map = np.zeros(gray.shape, dtype=np.uint8)
-  # for pt in pts:
-  #   cv2.circle(xcorner_map, tuple(pt), 5, 1, -1)
-
   contours, hierarchy = pruneContours(contours, hierarchy, pts)
 
-  return np.array(pts), contours
+  return pts, contours
 
 # @Brutesac.timed
 def simplifyContours(contours):
@@ -202,7 +204,8 @@ def contourSacChessboard(xcorner_pts, quads):
 @Brutesac.timed
 def processFrame(frame, gray, predict_fn):
   frame_orig = frame.copy()
-  pts, contours = calculateOnFrame(gray, predict_fn, processFrame.prevBoardpts, processFrame.prevGray)
+  pts, contours = calculateOnFrame(gray, predict_fn, processFrame.prevBoardpts, processFrame.prevGray,
+    WINSIZE=7)
 
   raw_M, best_quad, best_offset, best_score, best_error_score = contourSacChessboard(pts, contours)
   if raw_M is not None:
@@ -314,23 +317,40 @@ def sumpool(a, shape):
   sh = shape[0],a.shape[0]//shape[0],shape[1],a.shape[1]//shape[1]
   return a.reshape(sh).sum(-1).sum(1)
 
+def medianpool(a, shape):
+  # re-bins array summing up components.
+  sh = shape[0],a.shape[0]//shape[0],shape[1],a.shape[1]//shape[1]
+  return np.median(np.median(a.reshape(sh), axis=-1), axis=1).astype(np.int64)
+
+def meanpool(a, shape):
+  # re-bins array summing up components.
+  sh = shape[0],a.shape[0]//shape[0],shape[1],a.shape[1]//shape[1]
+  return a.reshape(sh).mean(-1).mean(1).astype(np.int64)
+
 @Brutesac.timed
 def findBestBoardViaTiles(warp_frame_img_gray, tile_px=32):
-  tilesum = sumpool(warp_frame_img_gray, np.array(warp_frame_img_gray.shape)/tile_px).astype(np.int64)
+  # In the range 0 to 1024 (from 32*32 = 1024 when downscaling by 32)
+  # tilesum = medianpool(warp_frame_img_gray.astype(np.int64), 
+  #   np.array(warp_frame_img_gray.shape)/tile_px)-512
+  tilesum = meanpool(warp_frame_img_gray.astype(np.int64), 
+    np.array(warp_frame_img_gray.shape)/tile_px)-128
 
   # Now try 8x8 subsquares of this 12x12 array and take the 
   # difference between the sum of white and sum of black tiles (abs)
   # and use that as a score.
-  same_color_tile_mask = np.tile(np.eye(2,dtype=bool),[4,4])
-  i,j = 0,0
+  # same_color_tile_mask = np.tile(np.eye(2,dtype=bool),[4,4])
+  same_color_tile_mask = np.tile(np.eye(2,dtype=np.int64),[4,4])*2-1 # -1 and 1
+
+  # TODO : Add bright boundary around chessboard, since most tend to have a light space there.
 
   best_score = 0
   best_idx = (-1,-1)
   for i in range(5):
     for j in range(5):
-      sx = np.sum(tilesum[i:i+8,j:j+8][same_color_tile_mask])
-      sy = np.sum(tilesum[i:i+8,j:j+8][~same_color_tile_mask])
-      score = np.abs(sx-sy)
+      # sA = np.sum(tilesum[i:i+8,j:j+8][same_color_tile_mask])
+      # sB = np.sum(tilesum[i:i+8,j:j+8][~same_color_tile_mask])
+      # score = np.abs(sA-sB)
+      score = np.sum((same_color_tile_mask*tilesum[i:i+8,j:j+8]))**2
       if score > best_score:
         best_score = score
         best_idx = (j, i)
@@ -412,7 +432,8 @@ def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='
       if warpFrame is not None:
         cv2.imshow('warpFrame',warpFrame)
       if tilesum is not None:
-        cv2.imshow('tilesum',tilesum/8)
+        # cv2.imshow('tilesum',tilesum/4)
+        cv2.imshow('tilemedian',(tilesum+128).astype(np.uint8))
 
     if SAVE_FRAME:
       output_orig_filepath = '%s/frame_%03d.jpg' % (output_folder, i)
