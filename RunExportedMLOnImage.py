@@ -10,11 +10,20 @@ import os
 import time
 import sys
 import skvideo.io
+from functools import wraps
 np.set_printoptions(suppress=True, linewidth=200) # Better printing of arrays
 
 from scipy.spatial import Delaunay
 
-
+def timed(f):
+  @wraps(f)
+  def wrapper(*args, **kwds):
+    start = time.time()
+    result = f(*args, **kwds)
+    elapsed = time.time() - start
+    print "%s took %.2f ms to finish" % (f.__name__, elapsed*1e3)
+    return result
+  return wrapper
 
 # export_dir = 'ml/model/001/1521934334' # old
 # export_dir = 'ml/model/002/1528405915' # newer (same dataset, but random image changes)
@@ -51,27 +60,26 @@ def fast_nonmax_sup(img, win=11):
   # notPeaks = cv2.bitwise_not(peaks)
 
   img[peaks == 0] = 0
-  # return img
 
 
-
+# Deprecated for fast_nonmax_sup
 def nonmax_sup(img, win=10):
-    w, h = img.shape
+  w, h = img.shape
 #     img = cv2.blur(img, ksize=(5,5))
-    img_sup = np.zeros_like(img, dtype=np.float64)
-    for i,j in np.argwhere(img):
-        # Get neigborhood
-        ta=max(0,i-win)
-        tb=min(w,i+win+1)
-        tc=max(0,j-win)
-        td=min(h,j+win+1)
-        cell = img[ta:tb,tc:td]
-        val = img[i,j]
-        # if np.sum(cell.max() == cell) > 1:
-        #     print(cell.argmax())
-        if cell.max() == val:
-            img_sup[i,j] = val
-    return img_sup
+  img_sup = np.zeros_like(img, dtype=np.float64)
+  for i,j in np.argwhere(img):
+    # Get neigborhood
+    ta=max(0,i-win)
+    tb=min(w,i+win+1)
+    tc=max(0,j-win)
+    td=min(h,j+win+1)
+    cell = img[ta:tb,tc:td]
+    val = img[i,j]
+    # if np.sum(cell.max() == cell) > 1:
+    #     print(cell.argmax())
+    if cell.max() == val:
+      img_sup[i,j] = val
+  return img_sup
 
 def pruneSaddle(s, init=128):
     thresh = init
@@ -96,31 +104,21 @@ def loadImage(filepath):
     
     return img, gray_img
 
-def getFinalSaddlePoints(img): # 32ms -> 15ms
-    # img = cv2.blur(img, (3,3)) # Blur it (.5ms)
-    saddle = getSaddle(img) # 6ms
-    # a = time.time()
-    # pruneSaddle(saddle, 1024) # (1024 = 8ms)
-    # b = time.time()
-    # print("getSaddle() took %.2f ms" % ((b-a)*1e3))
-    fast_nonmax_sup(saddle) # ~6ms
-    saddle[saddle<10000]=0 # Hardcoded ~1ms
-    spts = np.argwhere(saddle)
-    return spts
+@timed
+def getFinalSaddlePoints(img, WINSIZE=10): # 32ms -> 15ms
+  # img = cv2.blur(img, (3,3)) # Blur it (.5ms)
+  saddle = getSaddle(img) # 6ms
+  fast_nonmax_sup(saddle) # ~6ms
+  saddle[saddle<10000]=0 # Hardcoded ~1ms
+  spts = np.argwhere(saddle)[:,[1,0]] # Return in x,y order instead or row-col
+  # Remove those points near win_size edges
+  spts = clipBoundingPoints(spts, img.shape, WINSIZE)
+  return spts # returns in x,y column order
 
-# def processSingle(filename='input/img_10.png'):
-#   img = loadImage(filename)
-#   spts = getFinalSaddlePoints(img)
-# def input_fn_predict(img_data): # returns x, None
-#   def ret_func():
-#     dataset = tf.data.Dataset.from_tensor_slices(
-#         {
-#         'x':img_data
-#         }
-#       )
-#     dataset = dataset.batch(25)
-#     return dataset.make_one_shot_iterator().get_next(), None
-#   return ret_func
+def clipBoundingPoints(pts, img_shape, WINSIZE=10): # ~100us
+  # Points are given in x,y coords, not r,c of the image shape
+  a = ~np.any(np.logical_or(pts <= WINSIZE, pts[:,[1,0]] >= np.array(img_shape)-WINSIZE), axis=1)
+  return pts[a,:]
 
 def removeOutlierSimplices(tri):
     dists = np.zeros([tri.nsimplex, 3])
@@ -153,7 +151,6 @@ def findQuadSimplices(tri, dists, simplices_mask=None):
             continue
         # If these tris both agree that they're good neighbors, keep them.
         if (potential_neighbor[j] == i and i < j):
-#             print(i,j)
             if simplices_mask is not None:
                 if simplices_mask[i]:
                     good_neighbors.append(i)
@@ -180,31 +177,14 @@ def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
   if not os.path.exists(output_folder):
     os.mkdir(output_folder)
 
-  # cap.set(3,320)
-  # cap.set(4,240)
 
-  # while(True):
-      # Capture frame-by-frame
-      # ret, frame = cap.read()
-
-      # if not ret:
-      #   print("No frame, stopping")
-      #   break
   for i, frame in enumerate(vidstream):
-    # if i < 900:
-    #   continue
     print("Frame %d" % i)
-    # if (i%5!=0):
-    #   continue
-    
     # frame = cv2.resize(frame, (320,240), interpolation = cv2.INTER_CUBIC)
 
     # Our operations on the frame come here
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # if i==900:
-    #   cv2.imwrite("frame%d.png" % i, frame)
 
     inlier_pts, outlier_pts, pred_pts, final_predictions, prediction_levels, tri, simplices_mask = processImage(gray)
 
@@ -232,16 +212,10 @@ def videostream(filename='carlsen_match.mp4', SAVE_FRAME=True):
     if SAVE_FRAME:
       cv2.imwrite(output_filepath, frame)
 
-    # if i==900:
-    #   cv2.imwrite("frame%d_overlay.png" % i, frame)
-    #   print(np.array(pred_pts)[np.array(prediction_levels)>0.8,:])
-    #   break;
-
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
   # When everything done, release the capture
-  # cap.release()
   cv2.destroyAllWindows()
 
 def calculateOutliers(pts, threshold_mult = 2.5):
@@ -250,6 +224,7 @@ def calculateOutliers(pts, threshold_mult = 2.5):
   ctr = np.mean(pts, axis=0)
   return (np.any(np.abs(pts-ctr) > threshold_mult * std, axis=1))
 
+# TODO: remove deprecated
 def processImage(img_gray, predict_fn):
   print("Processing.")
   a_start = time.time()
@@ -265,7 +240,7 @@ def processImage(img_gray, predict_fn):
     if (np.any(pt <= WINSIZE) or np.any(pt >= np.array(img_gray.shape[:2]) - WINSIZE)):
       continue
     else:
-      tile = img_gray[pt[0]-WINSIZE:pt[0]+WINSIZE+1, pt[1]-WINSIZE:pt[1]+WINSIZE+1]
+      tile = img_gray[pt[1]-WINSIZE:pt[1]+WINSIZE+1, pt[0]-WINSIZE:pt[0]+WINSIZE+1]
       tiles.append(tile)
       pred_pts.append(pt)
 
@@ -321,7 +296,7 @@ def processImage(img_gray, predict_fn):
 
 
 
-
+# TODO: remove deprecated
 def main(SAVE_FRAME=False):
   # filenames = glob.glob('input_bad/*')
   filenames = glob.glob('input/img_*')

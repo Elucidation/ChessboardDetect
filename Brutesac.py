@@ -173,52 +173,34 @@ def predictOnTiles(tiles, predict_fn):
 
   # Return array of probability of tile being an xcorner.
   # return np.array([p[1] for p in predictions['probabilities']])
-  return np.array([p[0] for p in predictions['class_ids']])
+  return np.array([p[1] for p in predictions['probabilities']])
 
 @timed
-def getValidMLPoints(pts, img_gray, predict_fn, WINSIZE = 10):
-  # Build tiles to run classifier on.
-  tiles = []
-  pred_pts = []
-  for pt in pts:
-    # Build tiles
-    if (np.any(pt <= WINSIZE) or np.any(pt >= np.array(img_gray.shape[:2]) - WINSIZE)):
-      continue
-    else:
-      tile = img_gray[pt[0]-WINSIZE:pt[0]+WINSIZE+1, pt[1]-WINSIZE:pt[1]+WINSIZE+1]
-      tiles.append(tile)
-      pred_pts.append(pt)
+def predictOnImage(pts, img_gray, predict_fn, WINSIZE = 10):
+  # Build tiles to run classifier on. (23 ms)
+  tiles = getTilesFromImage(pts, img_gray, WINSIZE=10)
 
-  if tiles == []:
-    return np.array([])
-
-  tiles = np.array(tiles, dtype=np.uint8)
-
-  # Classify tiles.
+  # Classify tiles. (~137ms)
   probs = predictOnTiles(tiles, predict_fn)
 
-  ml_pts = np.array(pred_pts)[probs>0.5,:]
+  return probs
 
-  return ml_pts
+@timed
+def getTilesFromImage(pts, img_gray, WINSIZE=10):
+  # NOTE : Assumes no point is within WINSIZE of an edge!
+
+  # Points Nx2, columns should be x and y, not r and c.
+  # Build tiles
+  img_shape = np.array([img_gray.shape[1], img_gray.shape[0]])
+  tiles = np.zeros([len(pts), WINSIZE*2+1, WINSIZE*2+1])
+  for i, pt in enumerate(pts):
+    tiles[i,:,:] = img_gray[pt[1]-WINSIZE:pt[1]+WINSIZE+1, pt[0]-WINSIZE:pt[0]+WINSIZE+1]
+
+  return tiles
 
 @timed
 def classifyPoints(pts, img_gray, predict_fn, WINSIZE = 10):
-  # Build tiles to run classifier on.
-  tiles = []
-  for pt in pts:
-    # Build tiles
-    if (np.any(pt <= WINSIZE) or np.any(pt >= np.array([img_gray.shape[1], img_gray.shape[0]]) - WINSIZE)):
-      tiles.append(np.zeros([WINSIZE*2+1, WINSIZE*2+1], dtype=np.uint8)) # Pass zero matrix to inference.
-      # continue
-    else:
-      # Note: pts expects x,y image coordinates, not r,c row coordinates, so flip.
-      tile = img_gray[pt[1]-WINSIZE:pt[1]+WINSIZE+1, pt[0]-WINSIZE:pt[0]+WINSIZE+1]
-      tiles.append(tile)
-
-  if tiles == []:
-    return []
-
-  tiles = np.array(tiles, dtype=np.uint8)
+  tiles = getTilesFromImage(pts, img_gray)
 
   # Classify tiles.
   probs = predictOnTiles(tiles, predict_fn)
@@ -226,10 +208,10 @@ def classifyPoints(pts, img_gray, predict_fn, WINSIZE = 10):
   return probs
 
 @timed
-def classifyImage(img_gray, predict_fn, WINSIZE = 10):
-  spts = RunExportedMLOnImage.getFinalSaddlePoints(img_gray)
+def classifyImage(img_gray, predict_fn, WINSIZE = 10, prob_threshold=0.5):
+  spts = RunExportedMLOnImage.getFinalSaddlePoints(img_gray, WINSIZE)
 
-  return getValidMLPoints(spts, img_gray, predict_fn, WINSIZE)
+  return spts[predictOnImage(spts, img_gray, predict_fn, WINSIZE) > prob_threshold, :]
 
 @timed
 def processFrame(gray):

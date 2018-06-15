@@ -11,20 +11,21 @@ from tensorflow.python.saved_model import utils
 
 np.set_printoptions(suppress=True, linewidth=200) # Better printing of arrays
 
-export_dir = 'ml/model/006'
+input_model_dir = './training_pipeline/training_models/run1_512_256_128_orig_5k_dataset_10000'
+export_dir = 'ml/model/run97pct'
 
 # builder = tf.saved_model.builder.SavedModelBuilder(export_dir)
 with tf.Session(graph=tf.Graph()) as sess:
   # Set up model
   feature_img = tf.feature_column.numeric_column("x", shape=[21,21], dtype=tf.uint8)
 
-  units = [1024,512,256]
-  winsize = 10
+  # units = [1024,512,256]
+  units = [512,256,128]
   estimator = tf.estimator.DNNClassifier(
     feature_columns=[feature_img],
     hidden_units=units,
     n_classes=2,
-    model_dir='./training_models/v_win%s_%s' % (winsize, "_".join(map(str,units))),
+    model_dir=input_model_dir
     )
 
   def serving_input_receiver_fn():

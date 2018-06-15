@@ -1,5 +1,6 @@
 # coding=utf-8
 import os
+from argparse import ArgumentParser
 import cv2
 import PIL.Image
 import skvideo.io
@@ -17,8 +18,9 @@ lk_params = dict( winSize  = (15,15),
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
 @Brutesac.timed
-def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsForLK=10):
+def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsForLK=10, WINSIZE=10):
   # and return M for chessboard from image
+  # old_pts = None
   if old_pts is not None:
     # calculate optical flow
     pts, st, err = cv2.calcOpticalFlowPyrLK(old_gray, gray, old_pts.astype(np.float32), None, **lk_params)
@@ -36,18 +38,19 @@ def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsFor
     if len(pts) > minPointsForLK:
       # Update the valid points to the closest saddle point if possible
       spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
-      spts = spts[:,[1,0]]
+      # Returns in x,y column order
+
+      # spts = spts[:,[1,0]]
       newpts = []
       for i, pt in enumerate(pts):
         d = np.sum((spts - pt)**2, axis=1)
         best_spt_idx = d.argmin()
-        # best_spt_idx = d.max(axis=1).argmin()
-        # print(pt, spts[best_spt_idx,:], score)
         if d[best_spt_idx] > 1 and d[best_spt_idx] < 3**2:
           newpts.append(spts[best_spt_idx,:])
         elif d[best_spt_idx] < 10**2:
           newpts.append(pt)
       if not newpts:
+        # Empty array
         pts = np.zeros([0,2])
       else:
         pts = np.array(newpts)
@@ -58,9 +61,7 @@ def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsFor
     pts = Brutesac.classifyImage(gray, predict_fn)
     if len(pts) == 0:
       return pts, []
-    # pts = np.loadtxt('example_pts.txt')
-    pts = pts[:,[1,0]] # Switch rows/cols to x/y for plotting on an image
-    print("CLASSIFY")
+    print("CLASSIFY %d pts" % len(pts))
 
   # Get contours
   contours, hierarchy = getContours(gray, pts)
@@ -80,16 +81,18 @@ def simplifyContours(contours):
     contours[i] = cv2.approxPolyDP(contours[i],0.04*cv2.arcLength(contours[i],True),True)
 
 def updateCorners(contour, pts):
-    new_contour = contour.copy()
-    for i in range(len(contour)):
-      cc,rr = contour[i,0,:]
-      r = np.all(np.abs(pts - [cc,rr]) < 4, axis=1)
-      closest_xpt = np.argwhere(r)
-      if len(closest_xpt) > 0:
-        new_contour[i,0,:] = pts[closest_xpt[0]][0]
-      else:
-          return []
-    return new_contour
+  # Expects pts in x,y form
+  new_contour = contour.copy()
+  for i in range(len(contour)):
+    cc,rr = contour[i,0,:]
+    r = np.all(np.abs(pts - [cc,rr]) < 5, axis=1)
+    closest_xpt = np.argwhere(r)
+    # if there's at least one successful match nearby.
+    if len(closest_xpt) > 0:
+      new_contour[i,0,:] = pts[closest_xpt[0]][0]
+    else:
+        return []
+  return new_contour
 
 
 # @Brutesac.timed
@@ -200,7 +203,7 @@ def processFrame(frame, gray, predict_fn):
     M_homog = None
 
   # Draw tiles found
-  # cv2.drawContours(frame,contours,-1,(0,255,255),2)
+  cv2.drawContours(frame,contours,-1,(0,255,255),2)
 
   # Draw xcorner points
   for pt in pts.astype(np.int64):
@@ -357,15 +360,16 @@ def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='
   # ffmpeg -i vidstream_frames/ml_frame_%03d.jpg -c:v libx264 -vf "fps=25,format=yuv420p"  test.avi -y
   filename = os.path.basename(filepath)
 
-  output_folder = "%s/%s_vidstream_frames" % (output_folder_prefix, filename[:-4])
-  if not os.path.exists(output_folder):
-    os.mkdir(output_folder)
+  if SAVE_FRAME:
+    output_folder = "%s/%s_vidstream_frames" % (output_folder_prefix, filename[:-4])
+    if not os.path.exists(output_folder):
+      os.mkdir(output_folder)
 
-  # Set up pts.txt, first line is the video filename
-  # Following lines is the frame number and the flattened M matrix for the chessboard
-  output_filepath_pts = '%s/pts.txt' % (output_folder)
-  with open(output_filepath_pts, 'w') as f:
-    f.write('%s\n' % filepath)
+    # Set up pts.txt, first line is the video filename
+    # Following lines is the frame number and the flattened M matrix for the chessboard
+    output_filepath_pts = '%s/pts.txt' % (output_folder)
+    with open(output_filepath_pts, 'w') as f:
+      f.write('%s\n' % filepath)
 
   for i, frame in enumerate(vidstream):
     # if i < 300:
@@ -376,8 +380,10 @@ def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='
     print("Frame %d" % i)
     # if (i%5!=0):
     #   continue
-    
-    frame = cv2.resize(frame, (960, 720), interpolation = cv2.INTER_CUBIC)
+    # if frame.shape[1] > 960:
+    #   frame = cv2.resize(frame, (960, 720), interpolation = cv2.INTER_CUBIC)
+    frame = cv2.resize(frame, (480, 360), interpolation = cv2.INTER_CUBIC)
+
 
     # Our operations on the frame come here
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -401,11 +407,11 @@ def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='
         cv2.imshow('warpFrame',warpFrame)
     
 
-    output_orig_filepath = '%s/frame_%03d.jpg' % (output_folder, i)
-    output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
-    output_filepath_warp = '%s/ml_warp_frame_%03d.jpg' % (output_folder, i)
 
     if SAVE_FRAME:
+      output_orig_filepath = '%s/frame_%03d.jpg' % (output_folder, i)
+      output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
+      output_filepath_warp = '%s/ml_warp_frame_%03d.jpg' % (output_folder, i)
       cv2.imwrite(output_orig_filepath, frame)
       cv2.imwrite(output_filepath, overlay_frame)
       if warpFrame is None:
@@ -456,6 +462,13 @@ def main():
 
 
 if __name__ == '__main__':
+  parser = ArgumentParser()
+  parser.add_argument("--model", dest="model", default=None,
+                      help="Path to exported model to use.")
+  parser.add_argument("video_inputs", nargs='+',
+                      help="filepaths to videos to process")
+  args = parser.parse_args()
+  print("Arguments passed: \n\t%s\n" % args)
   # main()
   # filename = 'output2.avi' # Slow low rez
   # filename = 'random1.mp4' # Long video wait for 1k frames or so
@@ -475,12 +488,17 @@ if __name__ == '__main__':
     'speedchess1.mp4','wgm_1.mp4','gm_magnus_1.mp4',
     'bro_1.mp4','output2.avi','john1.mp4','john2.mp4','swivel.mp4', 'sam2.mp4']
 
-  for filename in allfiles:
-  # for filename in ['sam2.mp4']:
-    fullpath = 'datasets/raw/videos/%s' % filename
+  # for filename in allfiles:
+  # for filename in ['match2.mp4']:
+    # fullpath = 'datasets/raw/videos/%s' % filename
+  for fullpath in args.video_inputs:
     output_folder_prefix = 'results'
     processFrame.prevBoardpts = None
     processFrame.prevGray = None
     print('\n\n - ON %s\n\n' % fullpath)
-    predict_fn = RunExportedMLOnImage.getModel()
-    videostream(predict_fn, fullpath, output_folder_prefix, True, MAX_FRAME=1000, DO_VISUALS=True)
+    # predict_fn = RunExportedMLOnImage.getModel('ml/model/run97pct/1528942225')
+    if (args.model):
+      predict_fn = RunExportedMLOnImage.getModel(args.model)
+    else:
+      predict_fn = RunExportedMLOnImage.getModel()
+    videostream(predict_fn, fullpath, output_folder_prefix, False, MAX_FRAME=1000, DO_VISUALS=True)
