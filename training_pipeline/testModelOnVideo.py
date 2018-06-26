@@ -7,27 +7,70 @@ import cv2
 import PIL.Image
 import skvideo.io
 import numpy as np
-import Brutesac
-import RunExportedMLOnImage
+# import Brutesac
+import SaddlePoints
 from functools import wraps
 import time
 from scipy.spatial import ConvexHull
 
-@Brutesac.timed
-def classifyFrame(gray, predict_fn, WINSIZE=10):
+def predictOnTiles(tiles, predict_fn):
+  predictions = predict_fn(
+    {"x": tiles})
+
+  # Return array of probability of tile being an xcorner.
+  # return np.array([p[1] for p in predictions['probabilities']])
+  return np.array([p[1] for p in predictions['probabilities']])
+
+def predictOnImage(pts, img, gx, gy, predict_fn, WINSIZE = 10):
+  # Build tiles to run classifier on. (23 ms)
+  tiles = getTilesFromImage(pts, img, WINSIZE=WINSIZE)
+  # tiles = getTilesFromGradients(pts, gx, gy, WINSIZE=WINSIZE)
+
+  # Classify tiles. (~137ms)
+  probs = predictOnTiles(tiles, predict_fn)
+
+  return probs
+
+def getTilesFromImage(pts, img, WINSIZE=10):
+  # NOTE : Assumes no point is within WINSIZE of an edge!
+
+  # Points Nx2, columns should be x and y, not r and c.
+  # Build tiles
+  img_shape = np.array([img.shape[1], img.shape[0]])
+  tiles = np.zeros([len(pts), WINSIZE*2+1, WINSIZE*2+1, 3])
+  for i, pt in enumerate(np.round(pts).astype(np.int64)):
+    tiles[i,:,:,:] = img[
+    pt[1]-WINSIZE:pt[1]+WINSIZE+1, pt[0]-WINSIZE:pt[0]+WINSIZE+1, :]
+
+  return tiles
+
+def getTilesFromGradients(pts, gx, gy, WINSIZE=10):
+  # NOTE : Assumes no point is within WINSIZE of an edge!
+
+  # Points Nx2, columns should be x and y, not r and c.
+  # Build tiles
+  tiles = np.zeros([len(pts), WINSIZE*2+1, WINSIZE*2+1, 2])
+  for i, pt in enumerate(np.round(pts).astype(np.int64)):
+    tiles[i,:,:,0] = gx[
+    pt[1]-WINSIZE:pt[1]+WINSIZE+1, pt[0]-WINSIZE:pt[0]+WINSIZE+1]
+    tiles[i,:,:,1] = gy[
+    pt[1]-WINSIZE:pt[1]+WINSIZE+1, pt[0]-WINSIZE:pt[0]+WINSIZE+1]
+
+  return tiles
+
+def classifyFrame(frame, gray, predict_fn, WINSIZE=10):
   # All saddle points
-  spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
+  spts, gx, gy = SaddlePoints.getFinalSaddlePoints(gray, WINSIZE)
 
   # Saddle points classified as Chessboard X-corners
-  probabilities = Brutesac.predictOnImage(spts, gray, predict_fn, WINSIZE=WINSIZE)
+  probabilities = predictOnImage(spts, frame, gx, gy, predict_fn, WINSIZE=WINSIZE)
 
   return spts, probabilities
 
-@Brutesac.timed
 def processFrame(frame, gray, predict_fn, probability_threshold=0.9,WINSIZE=10):
   overlay_frame = frame.copy()
   # Overlay good and bad points onto the frame
-  spts, probabilities = classifyFrame(gray, predict_fn, WINSIZE=WINSIZE)
+  spts, probabilities = classifyFrame(frame, gray, predict_fn, WINSIZE=WINSIZE)
 
   # 10ms for the rest of this
 
@@ -83,7 +126,7 @@ def videostream(predict_fn, filepath='carlsen_match.mp4',
 
 
     a = time.time()
-    overlay_frame, spts, probabilities = processFrame(frame, gray, predict_fn, WINSIZE=7)
+    overlay_frame, spts, probabilities = processFrame(frame, gray, predict_fn, WINSIZE=args.winsize)
     t_proc = time.time() - a
 
     # Add frame counter
@@ -134,6 +177,9 @@ def main():
 
   print('Finished')
 
+def getModel(export_dir='ml/model/006/1528565066'):
+  from tensorflow.contrib import predictor
+  return predictor.from_saved_model(export_dir, signature_def_key='predict')
 
 if __name__ == '__main__':
   parser = ArgumentParser()
@@ -141,6 +187,8 @@ if __name__ == '__main__':
                       help="Path to exported model to use.")
   parser.add_argument("video_inputs", nargs='+',
                       help="filepaths to videos to process")
+  parser.add_argument("-ws", "--winsize", dest="winsize", default=10, type=int,
+                      help="Half window size (full kernel = 2*winsize + 1)")
 
 
   args = parser.parse_args()
@@ -172,6 +220,6 @@ if __name__ == '__main__':
     print('\n\n - ON %s\n\n' % fullpath)
     # predict_fn = RunExportedMLOnImage.getModel()
     # predict_fn = RunExportedMLOnImage.getModel('ml/model/run97pct/1528942225')
-    predict_fn = RunExportedMLOnImage.getModel(args.model)
+    predict_fn = getModel(args.model)
     videostream(predict_fn, fullpath, output_folder_prefix, 
       SAVE_FRAME=False, MAX_FRAME=1000, DO_VISUALS=True)

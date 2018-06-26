@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import scipy.ndimage
 import cv2 # For Sobel etc
 import glob
-import RunExportedMLOnImage
+import SaddlePoints
 from scipy.spatial import Delaunay
 from functools import wraps
 import time
@@ -209,7 +209,7 @@ def classifyPoints(pts, img_gray, predict_fn, WINSIZE = 10):
 
 @timed
 def classifyImage(img_gray, predict_fn, WINSIZE = 10, prob_threshold=0.5):
-  spts = RunExportedMLOnImage.getFinalSaddlePoints(img_gray, WINSIZE)
+  spts = SaddlePoints.getFinalSaddlePoints(img_gray, WINSIZE)
 
   return spts[predictOnImage(spts, img_gray, predict_fn, WINSIZE) > prob_threshold, :]
 

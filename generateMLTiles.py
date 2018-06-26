@@ -6,6 +6,7 @@ import cv2 # For Sobel etc
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
+import tensorflow as tf
 import os
 np.set_printoptions(suppress=True, linewidth=200) # Better printing of arrays
 
@@ -23,6 +24,9 @@ def loadImage(filepath, doGrayscale=False):
     img = img_orig.resize((new_width,new_height), resample=PIL.Image.BILINEAR)
     if (doGrayscale):
       img = img.convert('L') # grayscale
+    else:
+      # color, because sometimes it could be RGBA
+      img = img.convert('RGB')
     img = np.array(img)
     
     return img
@@ -37,19 +41,34 @@ def mkdir_p(path):
         else:
             raise
 
+# Converting the values into features
+# _int64 is used for numeric values
+def _int64_feature(value):
+  return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+# _bytes is used for string/char values
+def _bytes_feature(value):
+  return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
 def main():
   input_data = 'pt_dataset2.txt'
 
   WINSIZE = 10
-  dataset_folder = 'dataset_gray_%d' % WINSIZE
+  DO_BINARIZATION = False
+  DO_OPENING = False
+  DO_GRAYSCALE = False
+  DO_TFRECORD = True
+
+
+  if DO_GRAYSCALE:
+    dataset_folder = 'dataset_gray_%d' % WINSIZE
+  else:
+    dataset_folder = 'dataset_rgb_%d' % WINSIZE
   folder_good = '%s/good' % dataset_folder
   folder_bad = '%s/bad' % dataset_folder
   mkdir_p(folder_good)
   mkdir_p(folder_bad)
 
-  DO_BINARIZATION = False
-  DO_OPENING = False
-  DO_GRAYSCALE = True
 
   if (DO_BINARIZATION and not DO_GRAYSCALE):
     raise('Error, must be grayscale if doing binarization.')
@@ -62,70 +81,90 @@ def main():
     lines = [x.strip() for x in f.readlines()]
     n = len(lines)/5
     # n = 1
-    for i in range(n):
-      print("On %d/%d" % (i+1, n))
-      filename = lines[i*5]
-      s0 = lines[i*5+1].split()
-      s1 = lines[i*5+2].split()
-      s2 = lines[i*5+3].split()
-      s3 = lines[i*5+4].split()
-      good_pts = np.array([s1, s0], dtype=np.int).T
-      bad_pts = np.array([s3, s2], dtype=np.int).T
+    if DO_TFRECORD:
+      tfrecord_path = "%s/%s_ws%d.tfrecords" % ('datasets/raw','input_images', WINSIZE)
+    else:
+      tfrecord_path = '/tmp/tmpdelete.tfrecords'
 
-      img_filepath = 'input/%s.png' % filename
-      if not os.path.exists(img_filepath):
-        img_filepath = 'input/%s.jpg' % filename
-      if not os.path.exists(img_filepath):
-        img_filepath = 'input_yt/%s.jpg' % filename
-      if not os.path.exists(img_filepath):
-        img_filepath = 'input_yt/%s.png' % filename
-      img = loadImage(img_filepath, DO_GRAYSCALE)
+    with tf.python_io.TFRecordWriter(tfrecord_path) as writer:
+      for i in range(n):
+        print("On %d/%d" % (i+1, n))
+        filename = lines[i*5]
+        s0 = lines[i*5+1].split()
+        s1 = lines[i*5+2].split()
+        s2 = lines[i*5+3].split()
+        s3 = lines[i*5+4].split()
+        good_pts = np.array([s1, s0], dtype=np.int).T
+        bad_pts = np.array([s3, s2], dtype=np.int).T
 
-      kernel = np.ones((3,3),np.uint8)
+        img_filepath = 'datasets/raw/input/%s.png' % filename
+        if not os.path.exists(img_filepath):
+          img_filepath = 'datasets/raw/input/%s.jpg' % filename
+        if not os.path.exists(img_filepath):
+          img_filepath = 'datasets/raw/input_yt/%s.jpg' % filename
+        if not os.path.exists(img_filepath):
+          img_filepath = 'datasets/raw/input_yt/%s.png' % filename
+        img = loadImage(img_filepath, DO_GRAYSCALE)
 
-      # Good points
-      for i in range(good_pts.shape[0]):
-        pt = good_pts[i,:]
-        if (np.any(pt <= WINSIZE) or np.any(pt >= np.array(img.shape[:2]) - WINSIZE)):
-          # print("Skipping point %s" % pt)
-          continue
-        else:
-          tile = img[pt[0]-WINSIZE:pt[0]+WINSIZE+1, pt[1]-WINSIZE:pt[1]+WINSIZE+1]
-          # print(tile)
-          out_filename = '%s/%s_%03d.png' % (folder_good, filename, i)
-          if DO_BINARIZATION:
-            tile = cv2.adaptiveThreshold(tile,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
-          
-          if DO_OPENING:
-            tile = cv2.morphologyEx(tile, cv2.MORPH_OPEN, kernel)
+        kernel = np.ones((3,3),np.uint8)
 
-          if DO_GRAYSCALE:
-            im = PIL.Image.fromarray(tile).convert('L')
+        # Good points
+        for i in range(good_pts.shape[0]):
+          pt = good_pts[i,:]
+          if (np.any(pt <= WINSIZE) or np.any(pt >= np.array(img.shape[:2]) - WINSIZE)):
+            # print("Skipping point %s" % pt)
+            continue
           else:
-            im = PIL.Image.fromarray(tile).convert('RGB')
-          im.save(out_filename)
-          count_good += 1
+            tile = img[pt[0]-WINSIZE:pt[0]+WINSIZE+1, pt[1]-WINSIZE:pt[1]+WINSIZE+1]
+            # print(tile)
+            out_filename = '%s/%s_%03d.png' % (folder_good, filename, i)
+            if DO_BINARIZATION:
+              tile = cv2.adaptiveThreshold(tile,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+            
+            if DO_OPENING:
+              tile = cv2.morphologyEx(tile, cv2.MORPH_OPEN, kernel)
 
-      # Bad points
-      for i in range(bad_pts.shape[0]):
-        pt = bad_pts[i,:]
-        if (np.any(pt <= WINSIZE) or np.any(pt >= np.array(img.shape[:2]) - WINSIZE)):
-          # print("Skipping point %s" % pt)
-          continue
-        else:
-          tile = img[pt[0]-WINSIZE:pt[0]+WINSIZE+1, pt[1]-WINSIZE:pt[1]+WINSIZE+1]
-          out_filename = '%s/%s_%03d.png' % (folder_bad, filename, i)
-          if DO_BINARIZATION:
-            tile = cv2.adaptiveThreshold(tile,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
-          if DO_OPENING:
-            tile = cv2.morphologyEx(tile, cv2.MORPH_OPEN, kernel)
+            if DO_GRAYSCALE:
+              im = PIL.Image.fromarray(tile).convert('L')
+            else:
+              im = PIL.Image.fromarray(tile).convert('RGB')
 
-          if DO_GRAYSCALE:
-            im = PIL.Image.fromarray(tile).convert('L')
+            if DO_TFRECORD:
+              feature = { 'label': _int64_feature(1),
+                          'image': _bytes_feature(tf.compat.as_bytes(tile.tostring())) }
+              example = tf.train.Example(features=tf.train.Features(feature=feature))
+              writer.write(example.SerializeToString())
+            else:
+              im.save(out_filename)
+            count_good += 1
+
+        # Bad points
+        for i in range(bad_pts.shape[0]):
+          pt = bad_pts[i,:]
+          if (np.any(pt <= WINSIZE) or np.any(pt >= np.array(img.shape[:2]) - WINSIZE)):
+            # print("Skipping point %s" % pt)
+            continue
           else:
-            im = PIL.Image.fromarray(tile).convert('RGB')
-          im.save(out_filename)
-          count_bad += 1
+            tile = img[pt[0]-WINSIZE:pt[0]+WINSIZE+1, pt[1]-WINSIZE:pt[1]+WINSIZE+1]
+            out_filename = '%s/%s_%03d.png' % (folder_bad, filename, i)
+            if DO_BINARIZATION:
+              tile = cv2.adaptiveThreshold(tile,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)
+            if DO_OPENING:
+              tile = cv2.morphologyEx(tile, cv2.MORPH_OPEN, kernel)
+
+            if DO_GRAYSCALE:
+              im = PIL.Image.fromarray(tile).convert('L')
+            else:
+              im = PIL.Image.fromarray(tile).convert('RGB')
+            
+            if DO_TFRECORD:
+              feature = { 'label': _int64_feature(0),
+                          'image': _bytes_feature(tf.compat.as_bytes(tile.tostring())) }
+              example = tf.train.Example(features=tf.train.Features(feature=feature))
+              writer.write(example.SerializeToString())
+            else:
+              im.save(out_filename)
+            count_bad += 1
   print ("Finished %d good and %d bad tiles" % (count_good, count_bad))
 
 

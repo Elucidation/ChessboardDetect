@@ -21,7 +21,7 @@ def main(args):
     })
 
     # Build input function.
-    image = tf.placeholder(tf.uint8, [None, 15, 15])
+    image = tf.placeholder(tf.uint8, [None, args.winsize, args.winsize, args.channels])
     input_fn = tf.estimator.export.build_raw_serving_input_receiver_fn({
       'x': image,
     })
@@ -37,6 +37,10 @@ if __name__ == '__main__':
                       help="Directory to export model to, default uses model_dir name.")
   parser.add_argument("-fs", "--filter_sizes", dest="filter_sizes", nargs='+', type=int,
                       default=[32, 64, 1024], help="CNN model filter sizes")
+  parser.add_argument("-ws", "--winsize", dest="winsize", default=10, type=int,
+                      help="Half window size (full kernel = 2*winsize + 1)")
+  parser.add_argument("-c", "--channels", dest="channels", default=3, type=int,
+                      help="# of channels")
 
   args = parser.parse_args()
   main(args)

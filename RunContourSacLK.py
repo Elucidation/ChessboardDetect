@@ -8,6 +8,7 @@ import numpy as np
 import Brutesac
 import RunExportedMLOnImage
 from functools import wraps
+import glob
 import time
 from scipy.spatial import ConvexHull
 from scipy.spatial import cKDTree
@@ -18,7 +19,7 @@ lk_params = dict( winSize  = (15,15),
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
 @Brutesac.timed
-def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsForLK=10, WINSIZE=10, probability_threshold=0.8):
+def calculateOnFrame(args, gray, predict_fn, old_pts=None, old_gray=None, minPointsForLK=10, WINSIZE=10, probability_threshold=0.8):
   # and return M for chessboard from image
 
   # TODO: pass region mask to classifyImage to only search in a region
@@ -26,7 +27,7 @@ def calculateOnFrame(gray, predict_fn, old_pts=None, old_gray=None, minPointsFor
   spts = RunExportedMLOnImage.getFinalSaddlePoints(gray)
 
   # old_pts = None # For testing classify only without LK.
-  if old_pts is not None:
+  if args.do_LK and old_pts is not None:
     # calculate optical flow
     pts, st, err = cv2.calcOpticalFlowPyrLK(old_gray, gray, old_pts.astype(np.float32), None, **lk_params)
     # pts = np.round(pts).astype(np.int32)
@@ -200,9 +201,9 @@ def contourSacChessboard(xcorner_pts, quads):
 
 
 @Brutesac.timed
-def processFrame(frame, gray, predict_fn):
+def processFrame(args, frame, gray, predict_fn):
   frame_orig = frame.copy()
-  pts, contours = calculateOnFrame(gray, predict_fn, processFrame.prevBoardpts, processFrame.prevGray,
+  pts, contours = calculateOnFrame(args, gray, predict_fn, processFrame.prevBoardpts, processFrame.prevGray,
     WINSIZE=7)
 
   raw_M, best_quad, best_offset, best_score, best_error_score = contourSacChessboard(pts, contours)
@@ -363,6 +364,7 @@ def findBestBoardViaTiles(warp_frame_img_gray, tile_px=32):
 
 
   if False:
+    # This new idea is a regression, do not use.
     # New idea, take every other tile and sum the diffs of
     # it to it's one on the right and it to the one below.
     tile_mask = np.tile(np.eye(2,dtype=bool),[4,4])
@@ -429,23 +431,61 @@ def getAlignedChessCorners(unaligned_corners):
   d = np.sum(unaligned_corners**2, axis=1)
   best = d.argmax()
   aligned_corners = np.roll(unaligned_corners, -best, axis=0)
-  # d2 = np.sum(aligned_corners**2, axis=1)
   return aligned_corners
 
 
 def getWarpedChessboard(img, M, tile_px=32):
-  # Given a the 4 points of a chessboard, get a warped image of just the chessboard
-
-  # board_pts = np.vstack([
-  #   np.array([0,0,1,1])*tile_px,
-  #   np.array([0,1,1,0])*tile_px
-  #   ]).T
+  # Given the homography, get a warped image of just the chessboard
   img_warp = cv2.warpPerspective(img, M, (8*tile_px, 8*tile_px))
   return img_warp
 
+def processGivenFrame(args, predict_fn, frame, output_filepath_pts, output_folder, i):
+  # Convert PIL RGB to cv2
+  frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+  gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+  a = time.time()
+  overlay_frame, warpFrame, chessboard_corners, tilesum = processFrame(args, frame.copy(), gray, predict_fn)
+  t_proc = time.time() - a
+
+  # Add frame counter
+  cv2.putText(overlay_frame, 'Frame % 4d (Processed in % 6.1f ms)' % (i, t_proc*1e3), (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0)
+
+  if args.do_visuals:
+    # Display the resulting frame
+    cv2.imshow('overlayFrame',overlay_frame)
+    if warpFrame is not None:
+      cv2.imshow('warpFrame',warpFrame)
+    if tilesum is not None:
+      # cv2.imshow('tilesum',tilesum/4)
+      cv2.imshow('tilemedian',np.clip((tilesum+128), 0, 255).astype(np.uint8))
+      # cv2.imshow('tilemedian',(tilesum).astype(np.int64))
+
+  if args.save_frame:
+    output_orig_filepath = '%s/frame_%03d.jpg' % (output_folder, i)
+    output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
+    output_filepath_warp = '%s/ml_warp_frame_%03d.jpg' % (output_folder, i)
+    cv2.imwrite(output_orig_filepath, frame)
+    cv2.imwrite(output_filepath, overlay_frame)
+    if warpFrame is None:
+      cv2.imwrite(output_filepath_warp, np.zeros_like(frame))
+    else:
+      cv2.imwrite(output_filepath_warp, warpFrame)
+
+    # Append line of frame index and chessboard_corners matrix
+    if chessboard_corners is not None:
+      with open(output_filepath_pts, 'a') as f:
+        chessboard_corners_str = ','.join(map(str,chessboard_corners.flatten()))
+        # M_str = M.tostring() # binary
+        f.write(u'%d,%s\n' % (i, chessboard_corners_str))
+
+  if args.do_visuals:
+    if cv2.waitKey(args.frame_duration) & 0xFF == ord('q'):
+        return False
+  return True
 
 
-def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='', SAVE_FRAME=True, MAX_FRAME=None, DO_VISUALS=True):
+def videostream(args, predict_fn, filepath='carlsen_match.mp4', output_folder_prefix=''):
   print("Loading video %s" % filepath)
   # vidstream = skvideo.io.vread(filepath, num_frames=4000)
   # Load frame-by-frame
@@ -456,102 +496,52 @@ def videostream(predict_fn, filepath='carlsen_match.mp4', output_folder_prefix='
   # ffmpeg -i vidstream_frames/ml_frame_%03d.jpg -c:v libx264 -vf "fps=25,format=yuv420p"  test.avi -y
   filename = os.path.basename(filepath)
 
-  if SAVE_FRAME:
+  if args.save_frame:
     output_folder = "%s/%s_vidstream_frames" % (output_folder_prefix, filename[:-4])
     if not os.path.exists(output_folder):
       os.mkdir(output_folder)
 
     # Set up pts.txt, first line is the video filename
     # Following lines is the frame number and the flattened M matrix for the chessboard
-    output_filepath_pts = '%s/pts.txt' % (output_folder)
+    output_filepath_pts = '%s/pts2.txt' % (output_folder)
     with open(output_filepath_pts, 'w') as f:
       f.write('%s\n' % filepath)
+  else:
+    output_filepath_pts = None
+    output_folder = None
 
   for i, frame in enumerate(vidstream):
     # if i < 300:
     #   continue
-    if i >= MAX_FRAME:
-      print('Reached max frame %d >= %d' % (i, MAX_FRAME))
+    if i >= args.max_frame:
+      print('Reached max frame %d >= %d' % (i, args.max_frame))
       break
     print("Frame %d" % i)
-    # if (i%5!=0):
-    #   continue
+    if (i%args.skip!=0):
+      continue
     if frame.shape[1] > 640:
       frame = cv2.resize(frame, (640, 480), interpolation = cv2.INTER_CUBIC)
       # frame = cv2.resize(frame, (960, 720), interpolation = cv2.INTER_CUBIC)
-    # frame = cv2.resize(frame, (480, 360), interpolation = cv2.INTER_CUBIC)
+
+    status = processGivenFrame(args, predict_fn, frame, output_filepath_pts, output_folder, i)
+    if not status:
+      break
 
 
-    # Our operations on the frame come here
-    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+def main(args, predict_fn):
+  # filenames = ['datasets/raw/weird.jpg']
 
-    a = time.time()
-    overlay_frame, warpFrame, chessboard_corners, tilesum = processFrame(frame.copy(), gray, predict_fn)
-    t_proc = time.time() - a
+  # filenames = glob.glob('datasets/raw/input/*')
+  filenames = args.inputs
+  output_filepath_pts = None
+  output_folder = None
 
-    # Add frame counter
-    cv2.putText(overlay_frame, 'Frame % 4d (Processed in % 6.1f ms)' % (i, t_proc*1e3), (5,15), cv2.FONT_HERSHEY_PLAIN, 1.0,(255,255,255),0)
-
-    if DO_VISUALS:
-      # Display the resulting frame
-      cv2.imshow('overlayFrame',overlay_frame)
-      if warpFrame is not None:
-        cv2.imshow('warpFrame',warpFrame)
-      if tilesum is not None:
-        # cv2.imshow('tilesum',tilesum/4)
-        cv2.imshow('tilemedian',np.clip((tilesum+128), 0, 255).astype(np.uint8))
-        # cv2.imshow('tilemedian',(tilesum).astype(np.int64))
-
-    if SAVE_FRAME:
-      output_orig_filepath = '%s/frame_%03d.jpg' % (output_folder, i)
-      output_filepath = '%s/ml_frame_%03d.jpg' % (output_folder, i)
-      output_filepath_warp = '%s/ml_warp_frame_%03d.jpg' % (output_folder, i)
-      cv2.imwrite(output_orig_filepath, frame)
-      cv2.imwrite(output_filepath, overlay_frame)
-      if warpFrame is None:
-        cv2.imwrite(output_filepath_warp, np.zeros_like(frame))
-      else:
-        cv2.imwrite(output_filepath_warp, warpFrame)
-
-      # Append line of frame index and chessboard_corners matrix
-      if chessboard_corners is not None:
-        with open(output_filepath_pts, 'a') as f:
-          chessboard_corners_str = ','.join(map(str,chessboard_corners.flatten()))
-          # M_str = M.tostring() # binary
-          f.write(u'%d,%s\n' % (i, chessboard_corners_str))
-
-    if DO_VISUALS:
-      if cv2.waitKey(1) & 0xFF == ord('q'):
-          break
-
-  # When everything done, release the capture
-  # cap.release()
-  if DO_VISUALS:
-    cv2.destroyAllWindows()
-
-
-def main():
-  # filenames = glob.glob('input_bad/*')
-  # filenames = glob.glob('input/img_*') filenames = sorted(filenames)
-  # n = len(filenames)
-  # filename = filenames[0]
-  # filename = 'input/img_01.jpg'
-  filename = 'weird.jpg'
-  filename = 'chess_out1.png'
-
-  print ("Processing %s" % (filename))
-  img = PIL.Image.open(filename).resize([600,400])
-  # img = PIL.Image.open(filename)
-  rgb = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-  gray = np.array(img.convert('L'))
-
-  ###
-  rgb = processFrame(rgb, gray)
-  ###
-
-  cv2.imshow('frame',rgb)
-  cv2.waitKey()
+  for i, filename in enumerate(filenames):
+    print ("%d/%d : Processing %s" % (i, len(filenames), filename))
+    img = PIL.Image.open(filename).resize([600,400])
+    frame = np.array(img)
+    
+    status = processGivenFrame(args, predict_fn, frame, output_filepath_pts, output_folder, i)
 
   print('Finished')
 
@@ -560,42 +550,51 @@ if __name__ == '__main__':
   parser = ArgumentParser()
   parser.add_argument("--model", dest="model", default=None,
                       help="Path to exported model to use.")
-  parser.add_argument("video_inputs", nargs='+',
-                      help="filepaths to videos to process")
-  parser.add_argument("-save_frame",
-                      action='store_true', help="Save output frames")
+  parser.add_argument("inputs", nargs='+',
+                      help="filepaths to images/videos to process")
+  parser.add_argument("-save_frame", action='store_true', help="Save output frames")
+  parser.add_argument("-do_visuals", action='store_true', help="Visualize overlaid frames")
+  parser.add_argument("-do_LK", action='store_true', help="Do Lucas-Kanade per-frame tracking")
+  parser.add_argument("-do_images", action='store_true', help="Process images instead of videos")
+  parser.add_argument("-max_frame", type=int, default=1000, help="Max number of frames per video")
+  parser.add_argument("-skip",default=1,type=int, help="Only process every N-th frame")
+  parser.add_argument("-frame_duration",default=1,type=int, help="Time in ms to show each frame")
   args = parser.parse_args()
   print("Arguments passed: \n\t%s\n" % args)
-  # main()
-  # filename = 'output2.avi' # Slow low rez
-  # filename = 'random1.mp4' # Long video wait for 1k frames or so
-  # filename = 'match2.mp4' # difficult
-  # filename = 'output.avi' # Hard low rez
-  # filename = 'output.mp4' # Hard
-  # filename = 'speedchess1.mp4' # Great example
-  # filename = 'wgm_1.mp4' # Lots of motion blur, slow
-  # filename = 'gm_magnus_1.mp4' # Hard lots of scene transitions and blurry (init state with all pieces in a row not so good).
-  # filename = 'bro_1.mp4' # Little movement, easy.
-  # filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
-  # filename = 'john1.mp4' # Simple clean
-  # filename = 'john2.mp4' # Slight motion, clean but slow
-  # filename = 'swivel.mp4' # Moving around a fancy gold board
+  
+  if (args.model):
+    predict_fn = RunExportedMLOnImage.getModel(args.model)
+  else:
+    predict_fn = RunExportedMLOnImage.getModel()
+  
+  if args.do_images:
+    main(args, predict_fn)
+  else:
+    # filename = 'output2.avi' # Slow low rez
+    # filename = 'random1.mp4' # Long video wait for 1k frames or so
+    # filename = 'match2.mp4' # difficult
+    # filename = 'output.avi' # Hard low rez
+    # filename = 'output.mp4' # Hard
+    # filename = 'speedchess1.mp4' # Great example
+    # filename = 'wgm_1.mp4' # Lots of motion blur, slow
+    # filename = 'gm_magnus_1.mp4' # Hard lots of scene transitions and blurry (init state with all pieces in a row not so good).
+    # filename = 'bro_1.mp4' # Little movement, easy.
+    # filename = 'chess_beer.mp4' # Reasonably easy, some off-by-N errors
+    # filename = 'john1.mp4' # Simple clean
+    # filename = 'john2.mp4' # Slight motion, clean but slow
+    # filename = 'swivel.mp4' # Moving around a fancy gold board
 
-  allfiles = ['chess_beer.mp4', 'random1.mp4', 'match2.mp4','output.avi','output.mp4',
-    'speedchess1.mp4','wgm_1.mp4','gm_magnus_1.mp4',
-    'bro_1.mp4','output2.avi','john1.mp4','john2.mp4','swivel.mp4', 'sam2.mp4']
+    # allfiles = ['chess_beer.mp4', 'random1.mp4', 'match2.mp4','output.avi','output.mp4',
+    #   'speedchess1.mp4','wgm_1.mp4','gm_magnus_1.mp4',
+    #   'bro_1.mp4','output2.avi','john1.mp4','john2.mp4','swivel.mp4', 'sam2.mp4']
 
-  # for filename in allfiles:
-  # for filename in ['match2.mp4']:
-    # fullpath = 'datasets/raw/videos/%s' % filename
-  for fullpath in args.video_inputs:
-    output_folder_prefix = 'results'
-    processFrame.prevBoardpts = None
-    processFrame.prevGray = None
-    print('\n\n - ON %s\n\n' % fullpath)
-    # predict_fn = RunExportedMLOnImage.getModel('ml/model/run97pct/1528942225')
-    if (args.model):
-      predict_fn = RunExportedMLOnImage.getModel(args.model)
-    else:
-      predict_fn = RunExportedMLOnImage.getModel()
-    videostream(predict_fn, fullpath, output_folder_prefix, args.save_frame, MAX_FRAME=1000, DO_VISUALS=True)
+    # for filename in allfiles:
+    # for filename in ['match2.mp4']:
+      # fullpath = 'datasets/raw/videos/%s' % filename
+    for fullpath in args.inputs:
+      output_folder_prefix = 'results'
+      processFrame.prevBoardpts = None
+      processFrame.prevGray = None
+      print('\n\n - ON %s\n\n' % fullpath)
+      # predict_fn = RunExportedMLOnImage.getModel('ml/model/run97pct/1528942225')
+      videostream(args, predict_fn, fullpath, output_folder_prefix)

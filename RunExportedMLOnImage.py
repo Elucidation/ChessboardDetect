@@ -121,7 +121,7 @@ def getFinalSaddlePoints(img, WINSIZE=10): # 32ms -> 15ms
 
 def clipBoundingPoints(pts, img_shape, WINSIZE=10): # ~100us
   # Points are given in x,y coords, not r,c of the image shape
-  a = ~np.any(np.logical_or(pts <= WINSIZE, pts[:,[1,0]] >= np.array(img_shape)-WINSIZE), axis=1)
+  a = ~np.any(np.logical_or(pts <= WINSIZE, pts[:,[1,0]] >= np.array(img_shape)-WINSIZE-1), axis=1)
   return pts[a,:]
 
 def removeOutlierSimplices(tri):
