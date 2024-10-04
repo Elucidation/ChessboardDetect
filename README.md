@@ -1,5 +1,7 @@
 # Chessboard Detection
 
+*2024:* I've started a small youtube series explaining this repository: [Teaching AI To See](https://www.youtube.com/playlist?list=PLvPT8yiPYHne3qB84Vb2MujuIHcCTPSaW)
+
 *Note* : This repo is a staging ground of half-baked hacky code and different approaches to chessboard detection. Several different algorithms have been implemented each with varying tradeoffs.
 
 ![SpeedChessTrackedLK](sam2_composite.gif)
